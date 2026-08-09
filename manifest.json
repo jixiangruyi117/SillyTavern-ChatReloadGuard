@@ -1,0 +1,13 @@
+{
+  "display_name": "聊天重载保护器",
+  "loading_order": 9999,
+  "js": "index.js",
+  "css": "style.css",
+  "author": "SRL",
+  "version": "0.1.0",
+  "description": "防止切换正则或预设时因聊天重载失败而把历史记录覆盖成开场白。",
+  "auto_update": true,
+  "hooks": {
+    "activate": "activate"
+  }
+}
