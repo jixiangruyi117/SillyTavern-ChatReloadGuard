@@ -4,7 +4,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "SRL",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "防止危险聊天重载，并提供只读的酒馆源码键盘时序取证。",
   "auto_update": true,
   "hooks": {

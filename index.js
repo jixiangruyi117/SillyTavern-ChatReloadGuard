@@ -17,6 +17,7 @@ const SOURCE_TRACE_ID = 'chat-reload-guard-source-trace';
 const SOURCE_TRACE_STATUS_ID = 'chat-reload-guard-source-trace-status';
 const INTERACTION_TRACE_INSTALL_KEY = '__srlInteractionTraceInstalled';
 const MAX_INTERACTION_TRACE_EVENTS = 60;
+const MAX_LONG_ANIMATION_FRAMES = 40;
 
 function showToast(level, message, title, persistent = false) {
     const toast = globalThis.toastr?.[level];
@@ -97,19 +98,41 @@ function getTraceTarget(target) {
     return `${target.tagName.toLowerCase()}${id}${className}`;
 }
 
+function getTraceScript(script) {
+    let source = '';
+    try {
+        if (script?.sourceURL) source = new URL(script.sourceURL, location.href).pathname;
+    } catch {
+        source = '';
+    }
+    return {
+        source,
+        functionName: script?.sourceFunctionName ?? '',
+        charPosition: Number.isFinite(script?.sourceCharPosition) ? script.sourceCharPosition : null,
+        invokerType: script?.invokerType ?? '',
+        duration: Math.round(script?.duration ?? 0),
+        forcedStyleAndLayoutDuration: Math.round(script?.forcedStyleAndLayoutDuration ?? 0),
+    };
+}
+
 function installReadOnlyInteractionTrace() {
     if (globalThis[INTERACTION_TRACE_INSTALL_KEY]) return;
     globalThis[INTERACTION_TRACE_INSTALL_KEY] = true;
     let lastInteractionAt = null;
+    let lastInteraction = null;
 
     const record = (type, target, details = {}) => {
         if (!isSourceTraceEnabled()) return;
         const trace = getSourceTraceState();
         const events = trace.interactionEvents ??= [];
         const t = Math.round(performance.now());
-        events.push({ t, type, target: getTraceTarget(target), details });
+        const targetLabel = getTraceTarget(target);
+        events.push({ t, type, target: targetLabel, details });
         if (events.length > MAX_INTERACTION_TRACE_EVENTS) events.splice(0, events.length - MAX_INTERACTION_TRACE_EVENTS);
-        if (type !== 'long-task') lastInteractionAt = t;
+        if (type !== 'long-task') {
+            lastInteractionAt = t;
+            lastInteraction = { t, type, target: targetLabel };
+        }
     };
 
     document.addEventListener('pointerdown', event => record('pointerdown', event.target), { capture: true, passive: true });
@@ -128,6 +151,30 @@ function installReadOnlyInteractionTrace() {
         observer.observe({ type: 'longtask', buffered: false });
     } catch {
         // Some browsers do not expose long-task entries. Other trace events still work.
+    }
+
+    try {
+        const observer = new PerformanceObserver(list => {
+            if (!isSourceTraceEnabled()) return;
+            const trace = getSourceTraceState();
+            const frames = trace.longAnimationFrames ??= [];
+            for (const entry of list.getEntries()) {
+                const t = Math.round(entry.startTime);
+                const afterMs = lastInteraction ? t - lastInteraction.t : null;
+                frames.push({
+                    t,
+                    duration: Math.round(entry.duration),
+                    blockingDuration: Math.round(entry.blockingDuration ?? 0),
+                    afterMs,
+                    interaction: afterMs !== null && afterMs >= 0 && afterMs <= 1500 ? lastInteraction : null,
+                    scripts: Array.from(entry.scripts ?? [], getTraceScript).slice(0, 12),
+                });
+            }
+            if (frames.length > MAX_LONG_ANIMATION_FRAMES) frames.splice(0, frames.length - MAX_LONG_ANIMATION_FRAMES);
+        });
+        observer.observe({ type: 'long-animation-frame', buffered: false });
+    } catch {
+        // Long Animation Frames are unavailable in some browsers; long-task fallback remains active.
     }
 }
 
@@ -157,7 +204,7 @@ function setupSourceTracePanel(context, sillyTavernVersion) {
     setEnabled(settings.mobileKeyboardSourceTrace === true);
     toggle.addEventListener('change', () => setEnabled(toggle.checked));
     clearButton.addEventListener('click', () => {
-        globalThis[SOURCE_TRACE_GLOBAL] = { schema: 1, events: [], interactionEvents: [] };
+        globalThis[SOURCE_TRACE_GLOBAL] = { schema: 1, events: [], interactionEvents: [], longAnimationFrames: [] };
         setStatus('源码时序已清空。');
     });
     copyButton.addEventListener('click', async () => {
@@ -166,7 +213,8 @@ function setupSourceTracePanel(context, sillyTavernVersion) {
             await copyText(createSourceTraceReport(globalThis[SOURCE_TRACE_GLOBAL], { sillyTavernVersion, servedSource }));
             const sourceCount = globalThis[SOURCE_TRACE_GLOBAL]?.events?.length ?? 0;
             const interactionCount = globalThis[SOURCE_TRACE_GLOBAL]?.interactionEvents?.length ?? 0;
-            setStatus(`已复制源码 ${sourceCount} 条、交互 ${interactionCount} 条时序。`);
+            const frameCount = globalThis[SOURCE_TRACE_GLOBAL]?.longAnimationFrames?.length ?? 0;
+            setStatus(`已复制源码 ${sourceCount} 条、交互 ${interactionCount} 条、动画帧 ${frameCount} 条诊断。`);
         } catch (error) {
             setStatus(`复制失败：${String(error?.message ?? error)}`);
         }

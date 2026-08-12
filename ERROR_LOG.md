@@ -4,7 +4,8 @@
 
 - 证据：真机报告 `recorder.installed: false`、`recordedEvents: 0`，说明手机运行中的页面没有执行本机修改过的 `browser-fixes.js`。
 - 结论：不能据此继续判断或修改 `fixFunkyPositioning`；键盘卡顿和展开/收缩卡顿已扩大为全局交互问题。
-- 防复发：诊断报告必须读取当前页面同源实际返回的 `browser-fixes.js` 指纹；并只读关联点击、展开、焦点之后的长任务。未确认实际服务来源前，不将本机源码修改视为真机验证。
+- 补充证据：实际返回脚本为 3611 字节，恰好等于本机改动前的 `browser-fixes.js`；点击 `#cocktail-plus-drawer` 后出现多段 70ms 级长任务，另有 744ms 阻塞尚无调用归因。
+- 防复发：诊断报告必须读取当前页面同源实际返回的 `browser-fixes.js` 指纹，并在 Chrome 可用时保留 Long Animation Frames 的脚本路径和布局耗时；未确认实际服务来源前，不将本机源码修改视为真机验证。
 
 ## 2026-08-12：撤回未被真机证实的保护器键盘干预
 
