@@ -4,7 +4,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "SRL",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "保护聊天重载，并提供可关闭的移动端软键盘高度修复与只读诊断。",
   "auto_update": true,
   "hooks": {

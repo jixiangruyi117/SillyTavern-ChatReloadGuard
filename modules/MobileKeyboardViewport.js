@@ -236,9 +236,22 @@ export function createMobileKeyboardDiagnostics({
     let startedAt = 0;
     let longTaskObserver = null;
     let dynamicViewportProbe = null;
+    let activeCycle = 0;
+    let cycleSequence = 0;
 
-    function snapshot(type, details = {}) {
-        if (!enabled) return;
+    function trimEvents() {
+        while (events.length > MAX_DIAGNOSTIC_EVENTS) {
+            const currentCycleEntry = events.findIndex(event => event.cycle === activeCycle
+                && event.type !== 'keyboard-focusin'
+                && event.type !== 'keyboard-focusout');
+            const nonAnchorEntry = events.findIndex(event => event.type !== 'keyboard-focusin'
+                && event.type !== 'keyboard-focusout');
+            events.splice(currentCycleEntry >= 0 ? currentCycleEntry : nonAnchorEntry >= 0 ? nonAnchorEntry : 0, 1);
+        }
+    }
+
+    function snapshot(type, details = {}, cycle = activeCycle) {
+        if (!enabled || !cycle || cycle !== activeCycle) return;
         const heights = readHeights(windowHost, documentHost);
         const rootStyle = windowHost.getComputedStyle?.(documentHost.documentElement);
         const body = documentHost.body;
@@ -248,6 +261,7 @@ export function createMobileKeyboardDiagnostics({
         const event = {
             ms: Math.round((windowHost.performance?.now?.() ?? Date.now()) - startedAt),
             type,
+            cycle,
             heights,
             width: readWidth(windowHost),
             screen: {
@@ -273,30 +287,44 @@ export function createMobileKeyboardDiagnostics({
             details,
         };
         events.push(event);
-        if (events.length > MAX_DIAGNOSTIC_EVENTS) events.splice(0, events.length - MAX_DIAGNOSTIC_EVENTS);
+        trimEvents();
         onUpdate?.(events.length, event);
     }
 
-    function snapshotSequence(type) {
-        snapshot(type);
+    function snapshotSequence(type, cycle = activeCycle) {
+        snapshot(type, {}, cycle);
         if (typeof windowHost.setTimeout !== 'function') return;
         for (const delay of [100, 300, 600]) {
             const timer = windowHost.setTimeout(() => {
                 timers.delete(timer);
-                snapshot(`${type}-${delay}ms`);
+                snapshot(`${type}-${delay}ms`, {}, cycle);
             }, delay);
             timers.add(timer);
         }
+    }
+
+    function closeCycleAfterSettling(cycle) {
+        if (typeof windowHost.setTimeout !== 'function') return;
+        const timer = windowHost.setTimeout(() => {
+            timers.delete(timer);
+            if (activeCycle === cycle) activeCycle = 0;
+        }, 700);
+        timers.add(timer);
     }
 
     const handlers = {
         windowResize: () => snapshotSequence('window-resize'),
         visualResize: () => snapshotSequence('visual-resize'),
         focusIn: event => {
-            if (isKeyboardEditable(event?.target ?? documentHost.activeElement)) snapshotSequence('keyboard-focusin');
+            if (!isKeyboardEditable(event?.target ?? documentHost.activeElement)) return;
+            activeCycle = ++cycleSequence;
+            snapshotSequence('keyboard-focusin', activeCycle);
         },
         focusOut: event => {
-            if (isKeyboardEditable(event?.target)) snapshotSequence('keyboard-focusout');
+            if (!isKeyboardEditable(event?.target) || !activeCycle) return;
+            const cycle = activeCycle;
+            snapshotSequence('keyboard-focusout', cycle);
+            closeCycleAfterSettling(cycle);
         },
     };
 
@@ -306,6 +334,8 @@ export function createMobileKeyboardDiagnostics({
         if (enabled) {
             startedAt = windowHost.performance?.now?.() ?? Date.now();
             events.length = 0;
+            activeCycle = 0;
+            cycleSequence = 0;
             if (typeof documentHost.createElement === 'function' && documentHost.body) {
                 dynamicViewportProbe = documentHost.createElement('div');
                 dynamicViewportProbe.setAttribute('aria-hidden', 'true');
@@ -328,7 +358,6 @@ export function createMobileKeyboardDiagnostics({
                     longTaskObserver = null;
                 }
             }
-            snapshot('diagnostics-enabled');
         } else {
             windowHost.removeEventListener('resize', handlers.windowResize);
             windowHost.visualViewport?.removeEventListener('resize', handlers.visualResize);
@@ -340,6 +369,7 @@ export function createMobileKeyboardDiagnostics({
             timers.clear();
             dynamicViewportProbe?.remove();
             dynamicViewportProbe = null;
+            activeCycle = 0;
         }
         return enabled;
     }
@@ -350,18 +380,20 @@ export function createMobileKeyboardDiagnostics({
     }
 
     function selectRecentKeyboardCycle() {
-        if (events.length <= MAX_EXPORTED_EVENTS) return [...events];
-
-        let start = -1;
-        for (let index = events.length - 1; index >= 0; index--) {
-            if (events[index].type === 'keyboard-focusin') {
-                start = index;
-                break;
-            }
-        }
-        const recent = events.slice(start >= 0 ? start : -MAX_EXPORTED_EVENTS);
+        const latestCycle = events.at(-1)?.cycle;
+        const recent = latestCycle ? events.filter(event => event.cycle === latestCycle) : [];
         if (recent.length <= MAX_EXPORTED_EVENTS) return recent;
-        return [...recent.slice(0, 4), ...recent.slice(-(MAX_EXPORTED_EVENTS - 4))];
+
+        const anchors = recent.filter(event => event.type === 'keyboard-focusin' || event.type === 'keyboard-focusout');
+        const edgeEvents = [...recent.slice(0, 4), ...recent.slice(-(MAX_EXPORTED_EVENTS - anchors.length - 4))];
+        const selected = new Set([...anchors, ...edgeEvents]);
+        for (const event of recent) {
+            if (selected.size >= MAX_EXPORTED_EVENTS) break;
+            selected.add(event);
+        }
+        return [...selected]
+            .sort((left, right) => left.ms - right.ms)
+            .slice(0, MAX_EXPORTED_EVENTS);
     }
 
     function compactEvent(event) {

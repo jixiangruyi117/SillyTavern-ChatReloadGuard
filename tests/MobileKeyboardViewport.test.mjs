@@ -112,6 +112,14 @@ function makeEnvironment() {
         visualViewport,
         windowHost,
         advance(value) { now += value; },
+        flushTimers() {
+            const pending = [...timers.entries()].sort(([, left], [, right]) => left.delay - right.delay);
+            for (const [id, timer] of pending) {
+                if (!timers.has(id)) continue;
+                timers.delete(id);
+                timer.callback();
+            }
+        },
     };
 }
 
@@ -157,20 +165,21 @@ test('diagnostics are bounded and contain geometry but no chat or input content'
         getSillyTavernVersion: () => '1.18.0',
     });
     diagnostics.setEnabled(true);
+    assert.equal(diagnostics.eventCount, 0);
     const copyButton = { tagName: 'BUTTON', id: 'chat-reload-guard-copy-diagnostics' };
     env.documentHost.activeElement = copyButton;
     env.documentHost.dispatch('focusin', copyButton);
-    assert.equal(diagnostics.eventCount, 1);
+    assert.equal(diagnostics.eventCount, 0);
     const fixToggle = { tagName: 'INPUT', type: 'checkbox', id: 'chat-reload-guard-mobile-fix' };
     env.documentHost.activeElement = fixToggle;
     env.documentHost.dispatch('focusin', fixToggle);
-    assert.equal(diagnostics.eventCount, 1);
+    assert.equal(diagnostics.eventCount, 0);
+    env.documentHost.activeElement = env.textarea;
+    env.documentHost.dispatch('focusin', env.textarea);
     for (let index = 0; index < 130; index++) {
         env.advance(1);
         diagnostics.record('test-event', { index });
     }
-    env.documentHost.activeElement = env.textarea;
-    env.documentHost.dispatch('focusin', env.textarea);
     for (let index = 0; index < 10; index++) diagnostics.record('visual-resize', { index });
     env.documentHost.activeElement = env.body;
     env.documentHost.dispatch('focusout', env.textarea);
@@ -188,4 +197,20 @@ test('diagnostics are bounded and contain geometry but no chat or input content'
     assert.equal(reportText.includes('chat-a'), false);
     assert.equal(reportText.includes('message'), false);
     assert.equal(reportText.includes('inputValue'), false);
+});
+
+test('diagnostics stops capturing after a keyboard cycle settles', () => {
+    const env = makeEnvironment();
+    const diagnostics = createMobileKeyboardDiagnostics({ windowHost: env.windowHost, documentHost: env.documentHost });
+    diagnostics.setEnabled(true);
+    env.documentHost.activeElement = env.textarea;
+    env.documentHost.dispatch('focusin', env.textarea);
+    env.documentHost.activeElement = env.body;
+    env.documentHost.dispatch('focusout', env.textarea);
+    env.flushTimers();
+    const eventCount = diagnostics.eventCount;
+
+    diagnostics.record('after-copy-button-long-task', { duration: 120 });
+    assert.equal(diagnostics.eventCount, eventCount);
+    assert.equal(JSON.parse(diagnostics.exportReport()).events.some(event => event.e === 'after-copy-button-long-task'), false);
 });
