@@ -17,14 +17,14 @@
         <label class="chat-reload-guard__source-trace" for="chat-reload-guard-source-trace">
             <input id="chat-reload-guard-source-trace" type="checkbox">
             <span>
-                <b>记录酒馆源码键盘时序（只读）</b>
-                <small>仅记录输入框焦点、长任务、resize 与酒馆根节点定位写入/恢复；不改布局，不读取聊天或输入内容。</small>
+                <b>记录交互卡顿诊断（只读）</b>
+                <small>记录当前服务源码指纹，以及点击、展开、焦点后的长任务；不改布局，不读取聊天或输入内容。</small>
             </span>
         </label>
         <p id="chat-reload-guard-source-trace-status" class="chat-reload-guard__detail">未启用。</p>
         <div class="chat-reload-guard__source-trace-actions">
-            <button id="chat-reload-guard-copy-source-trace" type="button" class="menu_button">复制源码时序</button>
-            <button id="chat-reload-guard-clear-source-trace" type="button" class="menu_button">清空源码时序</button>
+            <button id="chat-reload-guard-copy-source-trace" type="button" class="menu_button">复制卡顿诊断</button>
+            <button id="chat-reload-guard-clear-source-trace" type="button" class="menu_button">清空卡顿诊断</button>
         </div>
     </div>
 </div>

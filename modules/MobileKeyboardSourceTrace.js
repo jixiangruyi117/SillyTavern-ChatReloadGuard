@@ -1,8 +1,25 @@
 export const SOURCE_TRACE_STORAGE_KEY = 'srl.mobileKeyboardTrace.enabled';
 export const SOURCE_TRACE_GLOBAL = '__srlMobileKeyboardTrace';
 
-export function createSourceTraceReport(trace, { sillyTavernVersion = 'unknown' } = {}) {
+export async function probeServedBrowserFixes(fetchFn = globalThis.fetch?.bind(globalThis)) {
+    if (typeof fetchFn !== 'function') return { checked: false, reason: 'fetch-unavailable' };
+    try {
+        const response = await fetchFn(`/scripts/browser-fixes.js?sourceTrace=${Date.now()}`, { cache: 'no-store' });
+        const source = await response.text();
+        return {
+            checked: true,
+            status: response.status,
+            hasRecorderMarker: source.includes('MOBILE_KEYBOARD_TRACE_GLOBAL'),
+            bytes: source.length,
+        };
+    } catch (error) {
+        return { checked: false, reason: String(error?.message ?? error) };
+    }
+}
+
+export function createSourceTraceReport(trace, { sillyTavernVersion = 'unknown', servedSource = null } = {}) {
     const events = Array.isArray(trace?.events) ? trace.events : [];
+    const interactionEvents = Array.isArray(trace?.interactionEvents) ? trace.interactionEvents : [];
     const recorder = {
         installed: trace?.recorder?.installed === true,
         enabled: trace?.recorder?.enabled === true,
@@ -12,9 +29,12 @@ export function createSourceTraceReport(trace, { sillyTavernVersion = 'unknown' 
         source: 'SillyTavern browser-fixes.js',
         sillyTavernVersion,
         recorder,
+        servedSource,
         recordedEvents: events.length,
-        eventKeys: 't=performance.now毫秒,type=源码事件,cycle=同一次键盘过程,heights=[innerHeight,visualViewport.height],active=焦点元素,details=长任务毫秒',
-        note: '仅由酒馆源码记录键盘焦点、resize、根节点定位写入/恢复与长任务；不包含聊天或输入内容。',
+        recordedInteractionEvents: interactionEvents.length,
+        eventKeys: 'events=源码时序；interactionEvents=点击/展开/焦点及长任务；均不记录文本内容',
+        note: '源码时序来自酒馆 browser-fixes.js；交互时序由扩展只读记录，用于关联全局卡顿；不包含聊天或输入内容。',
         events,
+        interactionEvents,
     });
 }

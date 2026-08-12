@@ -4,6 +4,7 @@ import {
 } from './modules/ChatReloadGuardCore.js';
 import {
     createSourceTraceReport,
+    probeServedBrowserFixes,
     SOURCE_TRACE_GLOBAL,
     SOURCE_TRACE_STORAGE_KEY,
 } from './modules/MobileKeyboardSourceTrace.js';
@@ -14,6 +15,8 @@ const STATUS_ID = 'chat-reload-guard-status';
 const DETAIL_ID = 'chat-reload-guard-detail';
 const SOURCE_TRACE_ID = 'chat-reload-guard-source-trace';
 const SOURCE_TRACE_STATUS_ID = 'chat-reload-guard-source-trace-status';
+const INTERACTION_TRACE_INSTALL_KEY = '__srlInteractionTraceInstalled';
+const MAX_INTERACTION_TRACE_EVENTS = 60;
 
 function showToast(level, message, title, persistent = false) {
     const toast = globalThis.toastr?.[level];
@@ -73,12 +76,68 @@ async function copyText(text) {
     textarea.remove();
 }
 
+function isSourceTraceEnabled() {
+    try {
+        return localStorage.getItem(SOURCE_TRACE_STORAGE_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+function getSourceTraceState() {
+    return globalThis[SOURCE_TRACE_GLOBAL] ??= { schema: 1, events: [], interactionEvents: [] };
+}
+
+function getTraceTarget(target) {
+    if (!(target instanceof Element)) return null;
+    const id = target.id ? `#${target.id}` : '';
+    const className = typeof target.className === 'string' && target.className.trim()
+        ? `.${target.className.trim().split(/\s+/)[0]}`
+        : '';
+    return `${target.tagName.toLowerCase()}${id}${className}`;
+}
+
+function installReadOnlyInteractionTrace() {
+    if (globalThis[INTERACTION_TRACE_INSTALL_KEY]) return;
+    globalThis[INTERACTION_TRACE_INSTALL_KEY] = true;
+    let lastInteractionAt = null;
+
+    const record = (type, target, details = {}) => {
+        if (!isSourceTraceEnabled()) return;
+        const trace = getSourceTraceState();
+        const events = trace.interactionEvents ??= [];
+        const t = Math.round(performance.now());
+        events.push({ t, type, target: getTraceTarget(target), details });
+        if (events.length > MAX_INTERACTION_TRACE_EVENTS) events.splice(0, events.length - MAX_INTERACTION_TRACE_EVENTS);
+        if (type !== 'long-task') lastInteractionAt = t;
+    };
+
+    document.addEventListener('pointerdown', event => record('pointerdown', event.target), { capture: true, passive: true });
+    document.addEventListener('toggle', event => record('toggle', event.target), true);
+    document.addEventListener('focusin', event => record('focusin', event.target), true);
+
+    if (typeof PerformanceObserver !== 'function') return;
+    try {
+        const observer = new PerformanceObserver(list => {
+            for (const entry of list.getEntries()) {
+                const t = Math.round(performance.now());
+                const afterMs = lastInteractionAt === null ? null : t - lastInteractionAt;
+                record('long-task', document.activeElement, { duration: Math.round(entry.duration), afterMs });
+            }
+        });
+        observer.observe({ type: 'longtask', buffered: false });
+    } catch {
+        // Some browsers do not expose long-task entries. Other trace events still work.
+    }
+}
+
 function setupSourceTracePanel(context, sillyTavernVersion) {
     const toggle = document.getElementById(SOURCE_TRACE_ID);
     const copyButton = document.getElementById('chat-reload-guard-copy-source-trace');
     const clearButton = document.getElementById('chat-reload-guard-clear-source-trace');
     const status = document.getElementById(SOURCE_TRACE_STATUS_ID);
     if (!toggle || !copyButton || !clearButton || !status) return;
+    installReadOnlyInteractionTrace();
 
     const settings = getExtensionSettings(context);
     const setStatus = text => status.textContent = text;
@@ -98,14 +157,16 @@ function setupSourceTracePanel(context, sillyTavernVersion) {
     setEnabled(settings.mobileKeyboardSourceTrace === true);
     toggle.addEventListener('change', () => setEnabled(toggle.checked));
     clearButton.addEventListener('click', () => {
-        globalThis[SOURCE_TRACE_GLOBAL] = { schema: 1, events: [] };
+        globalThis[SOURCE_TRACE_GLOBAL] = { schema: 1, events: [], interactionEvents: [] };
         setStatus('源码时序已清空。');
     });
     copyButton.addEventListener('click', async () => {
         try {
-            await copyText(createSourceTraceReport(globalThis[SOURCE_TRACE_GLOBAL], { sillyTavernVersion }));
-            const count = globalThis[SOURCE_TRACE_GLOBAL]?.events?.length ?? 0;
-            setStatus(`已复制 ${count} 条源码时序。`);
+            const servedSource = await probeServedBrowserFixes();
+            await copyText(createSourceTraceReport(globalThis[SOURCE_TRACE_GLOBAL], { sillyTavernVersion, servedSource }));
+            const sourceCount = globalThis[SOURCE_TRACE_GLOBAL]?.events?.length ?? 0;
+            const interactionCount = globalThis[SOURCE_TRACE_GLOBAL]?.interactionEvents?.length ?? 0;
+            setStatus(`已复制源码 ${sourceCount} 条、交互 ${interactionCount} 条时序。`);
         } catch (error) {
             setStatus(`复制失败：${String(error?.message ?? error)}`);
         }
