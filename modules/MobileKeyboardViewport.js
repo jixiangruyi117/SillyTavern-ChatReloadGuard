@@ -93,7 +93,12 @@ export function createMobileKeyboardViewportFix({
 
     function applyHeight(height, reason) {
         if (!enabled || height < 100) return;
-        root.style.setProperty(HEIGHT_VARIABLE, `${height}px`);
+        const nextHeight = `${height}px`;
+        if (root.style.getPropertyValue(HEIGHT_VARIABLE) === nextHeight) {
+            report('height-unchanged', { height, reason });
+            return;
+        }
+        root.style.setProperty(HEIGHT_VARIABLE, nextHeight);
         report('height-applied', { height, reason });
     }
 
@@ -238,6 +243,8 @@ export function createMobileKeyboardDiagnostics({
     let dynamicViewportProbe = null;
     let activeCycle = 0;
     let cycleSequence = 0;
+    let resizeTimer = 0;
+    const resizeSources = new Set();
 
     function trimEvents() {
         while (events.length > MAX_DIAGNOSTIC_EVENTS) {
@@ -250,14 +257,14 @@ export function createMobileKeyboardDiagnostics({
         }
     }
 
-    function snapshot(type, details = {}, cycle = activeCycle) {
+    function snapshot(type, details = {}, cycle = activeCycle, includeLayout = true) {
         if (!enabled || !cycle || cycle !== activeCycle) return;
         const heights = readHeights(windowHost, documentHost);
-        const rootStyle = windowHost.getComputedStyle?.(documentHost.documentElement);
-        const body = documentHost.body;
-        const sheld = documentHost.getElementById?.('sheld');
-        const chat = documentHost.getElementById?.('chat');
-        const form = documentHost.getElementById?.('form_sheld');
+        const rootStyle = includeLayout ? windowHost.getComputedStyle?.(documentHost.documentElement) : null;
+        const body = includeLayout ? documentHost.body : null;
+        const sheld = includeLayout ? documentHost.getElementById?.('sheld') : null;
+        const chat = includeLayout ? documentHost.getElementById?.('chat') : null;
+        const form = includeLayout ? documentHost.getElementById?.('form_sheld') : null;
         const event = {
             ms: Math.round((windowHost.performance?.now?.() ?? Date.now()) - startedAt),
             type,
@@ -272,11 +279,11 @@ export function createMobileKeyboardDiagnostics({
             active: activeElementLabel(documentHost),
             rootPosition: rootStyle?.position ?? null,
             appliedHeight: documentHost.documentElement?.style?.getPropertyValue?.(HEIGHT_VARIABLE) || null,
-            css100dvh: Math.round(dynamicViewportProbe?.getBoundingClientRect?.().height ?? 0),
+            css100dvh: includeLayout ? Math.round(dynamicViewportProbe?.getBoundingClientRect?.().height ?? 0) : null,
             rects: {
-                sheld: readRect(documentHost, 'sheld'),
-                chat: readRect(documentHost, 'chat'),
-                form: readRect(documentHost, 'form_sheld'),
+                sheld: includeLayout ? readRect(documentHost, 'sheld') : null,
+                chat: includeLayout ? readRect(documentHost, 'chat') : null,
+                form: includeLayout ? readRect(documentHost, 'form_sheld') : null,
             },
             computed: {
                 body: readComputedLayout(windowHost, body),
@@ -312,9 +319,24 @@ export function createMobileKeyboardDiagnostics({
         timers.add(timer);
     }
 
+    function recordResize(source) {
+        if (!activeCycle) return;
+        resizeSources.add(source);
+        if (resizeTimer || typeof windowHost.setTimeout !== 'function') return;
+        const cycle = activeCycle;
+        resizeTimer = windowHost.setTimeout(() => {
+            timers.delete(resizeTimer);
+            resizeTimer = 0;
+            const sources = [...resizeSources];
+            resizeSources.clear();
+            snapshot('resize', { sources }, cycle, false);
+        }, 80);
+        timers.add(resizeTimer);
+    }
+
     const handlers = {
-        windowResize: () => snapshotSequence('window-resize'),
-        visualResize: () => snapshotSequence('visual-resize'),
+        windowResize: () => recordResize('window'),
+        visualResize: () => recordResize('visual'),
         focusIn: event => {
             if (!isKeyboardEditable(event?.target ?? documentHost.activeElement)) return;
             activeCycle = ++cycleSequence;
@@ -350,7 +372,7 @@ export function createMobileKeyboardDiagnostics({
                 try {
                     longTaskObserver = new windowHost.PerformanceObserver(list => {
                         for (const entry of list.getEntries()) {
-                            snapshot('long-task', { duration: Math.round(entry.duration), name: entry.name });
+                            snapshot('long-task', { duration: Math.round(entry.duration), name: entry.name }, activeCycle, false);
                         }
                     });
                     longTaskObserver.observe({ type: 'longtask', buffered: true });
@@ -367,6 +389,8 @@ export function createMobileKeyboardDiagnostics({
             longTaskObserver = null;
             for (const timer of timers) windowHost.clearTimeout?.(timer);
             timers.clear();
+            resizeTimer = 0;
+            resizeSources.clear();
             dynamicViewportProbe?.remove();
             dynamicViewportProbe = null;
             activeCycle = 0;
@@ -405,6 +429,7 @@ export function createMobileKeyboardDiagnostics({
         if (details.reason != null) compactDetails.r = details.reason;
         if (details.duration != null) compactDetails.ms = details.duration;
         if (details.name != null) compactDetails.n = details.name;
+        if (details.sources != null) compactDetails.s = details.sources.join('+');
         return {
             t: event.ms,
             e: event.type,
@@ -412,14 +437,14 @@ export function createMobileKeyboardDiagnostics({
             w: event.width,
             a: event.active,
             ah: event.appliedHeight || null,
-            r: [event.rects.sheld?.bottom ?? null, event.rects.chat?.bottom ?? null, event.rects.form?.top ?? null, event.rects.form?.bottom ?? null],
+            r: [event.rects?.sheld?.bottom ?? null, event.rects?.chat?.bottom ?? null, event.rects?.form?.top ?? null, event.rects?.form?.bottom ?? null],
             d: compactDetails,
         };
     }
 
     function exportReport() {
         const selectedEvents = selectRecentKeyboardCycle();
-        const lastEvent = selectedEvents.at(-1) ?? events.at(-1) ?? null;
+        const lastEvent = [...selectedEvents].reverse().find(event => event.computed?.body) ?? selectedEvents.at(-1) ?? events.at(-1) ?? null;
         return JSON.stringify({
             schema: 2,
             mode: 'compact-latest-keyboard-cycle',
@@ -430,7 +455,7 @@ export function createMobileKeyboardDiagnostics({
             devicePixelRatio: Number(windowHost.devicePixelRatio ?? 1),
             recordedEvents: events.length,
             exportedEvents: selectedEvents.length,
-            eventKeys: 't=毫秒,e=事件,h=[inner,visual,client,100dvh],w=宽度,a=焦点,ah=修复高度,r=[外壳底,聊天底,输入栏顶,输入栏底],d={b:基线,k:键盘,h:高度,r:原因,ms:长任务,n:名称}',
+            eventKeys: 't=毫秒,e=事件,h=[inner,visual,client,100dvh],w=宽度,a=焦点,ah=修复高度,r=[外壳底,聊天底,输入栏顶,输入栏底],d={b:基线,k:键盘,h:高度,r:原因,ms:长任务,n:名称,s:resize来源}',
             screen: lastEvent?.screen ?? null,
             layout: lastEvent ? {
                 rootPosition: lastEvent.rootPosition,

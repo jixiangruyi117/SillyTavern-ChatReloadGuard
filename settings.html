@@ -26,7 +26,7 @@
             <input id="chat-reload-guard-mobile-diagnostics" type="checkbox">
             <span>
                 <b>记录移动端键盘诊断（只读）</b>
-                <small>仅记录从文本输入框聚焦到失焦后 600ms 的一次完整过程；包含视口尺寸、聊天区域坐标与长任务耗时，不读取聊天正文、输入内容、账号或请求数据。</small>
+                <small>仅记录从文本输入框聚焦到失焦后 600ms 的一次完整过程；完整读取只发生在锚点和定时点，resize 只合并记录来源与尺寸，避免诊断本身造成卡顿。</small>
             </span>
         </label>
         <p id="chat-reload-guard-mobile-diagnostics-status" class="chat-reload-guard__detail">未记录。</p>

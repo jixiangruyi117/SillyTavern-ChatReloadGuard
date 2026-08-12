@@ -9,6 +9,7 @@ import {
 class FakeStyle {
     constructor() {
         this.properties = new Map();
+        this.setCalls = 0;
     }
 
     getPropertyValue(property) {
@@ -16,6 +17,7 @@ class FakeStyle {
     }
 
     setProperty(property, value) {
+        this.setCalls++;
         this.properties.set(property, value);
     }
 
@@ -129,9 +131,11 @@ test('restores the pre-keyboard stable height on blur even while viewport values
 
     assert.equal(fix.setEnabled(true).supported, true);
     assert.equal(env.root.style.getPropertyValue('--chat-reload-guard-app-height'), '844px');
+    const initialWriteCount = env.root.style.setCalls;
 
     env.documentHost.activeElement = env.textarea;
     env.documentHost.dispatch('focusin', env.textarea);
+    assert.equal(env.root.style.setCalls, initialWriteCount);
     env.windowHost.innerHeight = 520;
     env.visualViewport.height = 520;
     // The fixed root can stay stale even though the visual viewport shrank.
@@ -213,4 +217,21 @@ test('diagnostics stops capturing after a keyboard cycle settles', () => {
     diagnostics.record('after-copy-button-long-task', { duration: 120 });
     assert.equal(diagnostics.eventCount, eventCount);
     assert.equal(JSON.parse(diagnostics.exportReport()).events.some(event => event.e === 'after-copy-button-long-task'), false);
+});
+
+test('diagnostics merges resize sources without forcing a layout snapshot', () => {
+    const env = makeEnvironment();
+    const diagnostics = createMobileKeyboardDiagnostics({ windowHost: env.windowHost, documentHost: env.documentHost });
+    diagnostics.setEnabled(true);
+    env.documentHost.activeElement = env.textarea;
+    env.documentHost.dispatch('focusin', env.textarea);
+    env.windowHost.dispatch('resize');
+    env.visualViewport.dispatch('resize');
+    env.flushTimers();
+
+    const report = JSON.parse(diagnostics.exportReport());
+    const resize = report.events.find(event => event.e === 'resize');
+    assert.equal(resize.d.s, 'window+visual');
+    assert.deepEqual(resize.r, [null, null, null, null]);
+    assert.equal(resize.h[3], null);
 });
