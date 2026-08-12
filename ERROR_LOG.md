@@ -1,5 +1,13 @@
 # 问题记录
 
+## 2026-08-12：两次移动端软键盘缓解均未通过真机验证
+
+- 现象：Android 设备打开输入框时卡顿；收起软键盘后输入栏可能停在键盘打开时的位置，底部露出大块黑色区域。
+- 已否定方案一：仅撤销 SillyTavern 移动端 `resize` 回调写入的根节点 `position: fixed`。用户开启后症状不变。
+- 已否定方案二：依据截图将 `visualViewport.height` 写入 `body`、`#bg1`、`#sheld`，并在失焦后延迟重试。用户真机仍确认症状不变。
+- 已执行：两个无效提交均已 revert，聊天重载保护原功能保留；不再保留开关或视口覆盖逻辑。
+- 后续取证要求：在同一设备上记录 `window.innerHeight`、`visualViewport.height`、`#sheld`/`#chat`/`#form_sheld` 的 `getBoundingClientRect()`、每次 resize 的时间线和 Performance 长任务，分别覆盖键盘打开、收起、黑块出现与恢复。未取得这些运行时证据前不得新增第三个修复补丁。
+
 ## 2026-08-09：聊天重载失败后覆盖历史记录
 
 - 现象：切换正则或含正则预设后，聊天偶发只剩开场白。
