@@ -79,7 +79,7 @@ function installMobileKeyboardToggle(context) {
             return;
         }
         updateMobileKeyboardStatus(result.enabled
-            ? '已启用：使用真实可视高度同步聊天壳体，避免收起软键盘后底部留黑。'
+            ? '已启用：仅在软键盘打开或收起时撤销酒馆的临时根节点固定定位。'
             : '未启用：不会改变酒馆的原始视口处理。');
     };
 
