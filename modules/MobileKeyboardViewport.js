@@ -2,6 +2,7 @@ const ROOT_CLASS = 'chat-reload-guard-mobile-viewport';
 const HEIGHT_VARIABLE = '--chat-reload-guard-app-height';
 const KEYBOARD_MIN_HEIGHT = 120;
 const MAX_DIAGNOSTIC_EVENTS = 120;
+const MAX_EXPORTED_EVENTS = 18;
 
 function isEditable(element) {
     if (!element) return false;
@@ -340,17 +341,67 @@ export function createMobileKeyboardDiagnostics({
         onUpdate?.(0, null);
     }
 
+    function selectRecentKeyboardCycle() {
+        if (events.length <= MAX_EXPORTED_EVENTS) return [...events];
+
+        let start = -1;
+        for (let index = events.length - 1; index >= 0; index--) {
+            if (events[index].type === 'focusin') {
+                start = index;
+                break;
+            }
+        }
+        const recent = events.slice(start >= 0 ? start : -MAX_EXPORTED_EVENTS);
+        if (recent.length <= MAX_EXPORTED_EVENTS) return recent;
+        return [...recent.slice(0, 4), ...recent.slice(-(MAX_EXPORTED_EVENTS - 4))];
+    }
+
+    function compactEvent(event) {
+        const details = event.details ?? {};
+        const compactDetails = {};
+        if (details.baselineHeight != null) compactDetails.b = details.baselineHeight;
+        if (details.keyboardVisible != null) compactDetails.k = details.keyboardVisible;
+        if (details.height != null) compactDetails.h = details.height;
+        if (details.reason != null) compactDetails.r = details.reason;
+        if (details.duration != null) compactDetails.ms = details.duration;
+        if (details.name != null) compactDetails.n = details.name;
+        return {
+            t: event.ms,
+            e: event.type,
+            h: [event.heights.inner, event.heights.visual, event.heights.client, event.css100dvh],
+            w: event.width,
+            a: event.active,
+            ah: event.appliedHeight || null,
+            r: [event.rects.sheld?.bottom ?? null, event.rects.chat?.bottom ?? null, event.rects.form?.top ?? null, event.rects.form?.bottom ?? null],
+            d: compactDetails,
+        };
+    }
+
     function exportReport() {
+        const selectedEvents = selectRecentKeyboardCycle();
+        const lastEvent = selectedEvents.at(-1) ?? events.at(-1) ?? null;
         return JSON.stringify({
-            schema: 1,
+            schema: 2,
+            mode: 'compact-latest-keyboard-cycle',
             extensionVersion,
             sillyTavernVersion: getSillyTavernVersion(),
             userAgent: String(windowHost.navigator?.userAgent ?? ''),
             platform: String(windowHost.navigator?.platform ?? ''),
             devicePixelRatio: Number(windowHost.devicePixelRatio ?? 1),
-            note: '只包含视口、100dvh 实测像素、元素计算样式/坐标和事件耗时，不包含聊天或输入内容。',
-            events,
-        }, null, 2);
+            recordedEvents: events.length,
+            exportedEvents: selectedEvents.length,
+            eventKeys: 't=毫秒,e=事件,h=[inner,visual,client,100dvh],w=宽度,a=焦点,ah=修复高度,r=[外壳底,聊天底,输入栏顶,输入栏底],d={b:基线,k:键盘,h:高度,r:原因,ms:长任务,n:名称}',
+            screen: lastEvent?.screen ?? null,
+            layout: lastEvent ? {
+                rootPosition: lastEvent.rootPosition,
+                body: lastEvent.computed.body,
+                sheld: lastEvent.computed.sheld,
+                chat: lastEvent.computed.chat,
+                form: lastEvent.computed.form,
+            } : null,
+            note: '从内存记录中自动提取最近一次键盘过程；不包含聊天或输入内容。',
+            events: selectedEvents.map(compactEvent),
+        });
     }
 
     return {

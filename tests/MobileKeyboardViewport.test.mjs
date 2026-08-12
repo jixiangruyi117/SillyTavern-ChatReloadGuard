@@ -161,13 +161,22 @@ test('diagnostics are bounded and contain geometry but no chat or input content'
         env.advance(1);
         diagnostics.record('test-event', { index });
     }
+    env.documentHost.activeElement = env.textarea;
+    env.documentHost.dispatch('focusin');
+    for (let index = 0; index < 10; index++) diagnostics.record('visual-resize', { index });
+    env.documentHost.activeElement = env.body;
+    env.documentHost.dispatch('focusout');
+    for (let index = 0; index < 20; index++) diagnostics.record('settled', { index });
 
     const reportText = diagnostics.exportReport();
     const report = JSON.parse(reportText);
-    assert.equal(report.events.length, 120);
-    assert.equal(report.events.at(-1).rects.form.bottom, 844);
-    assert.equal(report.events.at(-1).css100dvh, 844);
-    assert.equal(report.events.at(-1).active, 'body');
+    assert.equal(report.recordedEvents, 120);
+    assert.equal(report.exportedEvents, 18);
+    assert.equal(report.events[0].e, 'focusin');
+    assert.equal(report.events.at(-1).r[3], 844);
+    assert.equal(report.events.at(-1).h[3], 844);
+    assert.equal(report.events.at(-1).a, 'body');
+    assert.ok(reportText.length < 6000);
     assert.equal(reportText.includes('chat-a'), false);
     assert.equal(reportText.includes('message'), false);
     assert.equal(reportText.includes('inputValue'), false);

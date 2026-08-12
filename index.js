@@ -8,7 +8,7 @@ import {
 } from './modules/MobileKeyboardViewport.js';
 
 const EXTENSION_FOLDER = 'third-party/SillyTavern-ChatReloadGuard';
-const EXTENSION_VERSION = '0.3.0';
+const EXTENSION_VERSION = '0.3.1';
 const SETTINGS_KEY = 'sillyTavernChatReloadGuard';
 const STATUS_ID = 'chat-reload-guard-status';
 const DETAIL_ID = 'chat-reload-guard-detail';
@@ -136,7 +136,7 @@ function installMobileKeyboardTools(context, sillyTavernVersion, repairSupported
     copyButton.addEventListener('click', async () => {
         try {
             await copyText(diagnostics.exportReport());
-            setText(DIAGNOSTICS_STATUS_ID, `已复制 ${diagnostics.eventCount} 条只读诊断事件。`);
+            setText(DIAGNOSTICS_STATUS_ID, `已从 ${diagnostics.eventCount} 条内存记录中复制最近一次键盘过程的精简诊断。`);
         } catch (error) {
             setText(DIAGNOSTICS_STATUS_ID, `复制失败：${String(error?.message ?? error)}`);
         }
