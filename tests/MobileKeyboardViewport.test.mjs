@@ -46,8 +46,8 @@ function createEventTarget(extra = {}) {
         removeEventListener(type, listener) {
             listeners.set(type, (listeners.get(type) ?? []).filter(entry => entry !== listener));
         },
-        dispatch(type) {
-            for (const listener of [...(listeners.get(type) ?? [])]) listener({ type });
+        dispatch(type, target) {
+            for (const listener of [...(listeners.get(type) ?? [])]) listener({ type, target });
         },
     };
 }
@@ -123,7 +123,7 @@ test('restores the pre-keyboard stable height on blur even while viewport values
     assert.equal(env.root.style.getPropertyValue('--chat-reload-guard-app-height'), '844px');
 
     env.documentHost.activeElement = env.textarea;
-    env.documentHost.dispatch('focusin');
+    env.documentHost.dispatch('focusin', env.textarea);
     env.windowHost.innerHeight = 520;
     env.visualViewport.height = 520;
     // The fixed root can stay stale even though the visual viewport shrank.
@@ -133,7 +133,7 @@ test('restores the pre-keyboard stable height on blur even while viewport values
 
     // Android can fire focusout before innerHeight/visualViewport recover.
     env.documentHost.activeElement = env.body;
-    env.documentHost.dispatch('focusout');
+    env.documentHost.dispatch('focusout', env.textarea);
     assert.equal(env.windowHost.innerHeight, 520);
     assert.equal(env.visualViewport.height, 520);
     assert.equal(env.root.style.getPropertyValue('--chat-reload-guard-app-height'), '844px');
@@ -144,7 +144,7 @@ test('restores the pre-keyboard stable height on blur even while viewport values
 
     env.visualViewport.height = 400;
     env.visualViewport.dispatch('resize');
-    env.documentHost.dispatch('focusout');
+    env.documentHost.dispatch('focusout', env.textarea);
     assert.equal(env.root.style.getPropertyValue('--chat-reload-guard-app-height'), '');
 });
 
@@ -157,22 +157,30 @@ test('diagnostics are bounded and contain geometry but no chat or input content'
         getSillyTavernVersion: () => '1.18.0',
     });
     diagnostics.setEnabled(true);
+    const copyButton = { tagName: 'BUTTON', id: 'chat-reload-guard-copy-diagnostics' };
+    env.documentHost.activeElement = copyButton;
+    env.documentHost.dispatch('focusin', copyButton);
+    assert.equal(diagnostics.eventCount, 1);
+    const fixToggle = { tagName: 'INPUT', type: 'checkbox', id: 'chat-reload-guard-mobile-fix' };
+    env.documentHost.activeElement = fixToggle;
+    env.documentHost.dispatch('focusin', fixToggle);
+    assert.equal(diagnostics.eventCount, 1);
     for (let index = 0; index < 130; index++) {
         env.advance(1);
         diagnostics.record('test-event', { index });
     }
     env.documentHost.activeElement = env.textarea;
-    env.documentHost.dispatch('focusin');
+    env.documentHost.dispatch('focusin', env.textarea);
     for (let index = 0; index < 10; index++) diagnostics.record('visual-resize', { index });
     env.documentHost.activeElement = env.body;
-    env.documentHost.dispatch('focusout');
+    env.documentHost.dispatch('focusout', env.textarea);
     for (let index = 0; index < 20; index++) diagnostics.record('settled', { index });
 
     const reportText = diagnostics.exportReport();
     const report = JSON.parse(reportText);
     assert.equal(report.recordedEvents, 120);
     assert.equal(report.exportedEvents, 18);
-    assert.equal(report.events[0].e, 'focusin');
+    assert.equal(report.events[0].e, 'keyboard-focusin');
     assert.equal(report.events.at(-1).r[3], 844);
     assert.equal(report.events.at(-1).h[3], 844);
     assert.equal(report.events.at(-1).a, 'body');

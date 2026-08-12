@@ -8,7 +8,7 @@ import {
 } from './modules/MobileKeyboardViewport.js';
 
 const EXTENSION_FOLDER = 'third-party/SillyTavern-ChatReloadGuard';
-const EXTENSION_VERSION = '0.3.1';
+const EXTENSION_VERSION = '0.3.2';
 const SETTINGS_KEY = 'sillyTavernChatReloadGuard';
 const STATUS_ID = 'chat-reload-guard-status';
 const DETAIL_ID = 'chat-reload-guard-detail';

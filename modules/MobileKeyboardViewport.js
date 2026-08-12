@@ -4,11 +4,13 @@ const KEYBOARD_MIN_HEIGHT = 120;
 const MAX_DIAGNOSTIC_EVENTS = 120;
 const MAX_EXPORTED_EVENTS = 18;
 
-function isEditable(element) {
+function isKeyboardEditable(element) {
     if (!element) return false;
     if (element.isContentEditable) return true;
     const tag = String(element.tagName ?? '').toLowerCase();
-    return tag === 'textarea' || tag === 'input' || tag === 'select';
+    if (tag === 'textarea') return true;
+    if (tag !== 'input') return false;
+    return !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'].includes(String(element.type ?? 'text').toLowerCase());
 }
 
 function isMobileViewport(windowHost) {
@@ -103,7 +105,7 @@ export function createMobileKeyboardViewportFix({
         const width = readWidth(windowHost);
         const currentMaximum = maximumHeight(heights);
         const widthChanged = baselineWidth && Math.abs(width - baselineWidth) > 40;
-        const editableFocused = isEditable(documentHost.activeElement);
+        const editableFocused = isKeyboardEditable(documentHost.activeElement);
         const currentMinimum = minimumHeight(heights);
 
         if (widthChanged) {
@@ -154,7 +156,8 @@ export function createMobileKeyboardViewportFix({
         }
     }
 
-    function onFocusIn() {
+    function onFocusIn(event) {
+        if (!isKeyboardEditable(event?.target ?? documentHost.activeElement)) return;
         const heights = readHeights(windowHost, documentHost);
         const currentMaximum = maximumHeight(heights);
         if (!keyboardVisible) baselineHeight = Math.max(baselineHeight, currentMaximum);
@@ -162,7 +165,8 @@ export function createMobileKeyboardViewportFix({
         scheduleSettledUpdates('focusin');
     }
 
-    function onFocusOut() {
+    function onFocusOut(event) {
+        if (!isKeyboardEditable(event?.target)) return;
         keyboardVisible = false;
         applyHeight(baselineHeight, 'focusout-stable-baseline');
         report('focusout');
@@ -288,8 +292,12 @@ export function createMobileKeyboardDiagnostics({
     const handlers = {
         windowResize: () => snapshotSequence('window-resize'),
         visualResize: () => snapshotSequence('visual-resize'),
-        focusIn: () => snapshotSequence('focusin'),
-        focusOut: () => snapshotSequence('focusout'),
+        focusIn: event => {
+            if (isKeyboardEditable(event?.target ?? documentHost.activeElement)) snapshotSequence('keyboard-focusin');
+        },
+        focusOut: event => {
+            if (isKeyboardEditable(event?.target)) snapshotSequence('keyboard-focusout');
+        },
     };
 
     function setEnabled(nextEnabled) {
@@ -346,7 +354,7 @@ export function createMobileKeyboardDiagnostics({
 
         let start = -1;
         for (let index = events.length - 1; index >= 0; index--) {
-            if (events[index].type === 'focusin') {
+            if (events[index].type === 'keyboard-focusin') {
                 start = index;
                 break;
             }
