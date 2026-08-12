@@ -6,6 +6,7 @@ import { createSourceTraceReport } from '../modules/MobileKeyboardSourceTrace.js
 test('exports the source timing trace without chat or input content', () => {
     const report = JSON.parse(createSourceTraceReport({
         schema: 1,
+        recorder: { installed: true, enabled: true },
         events: [{
             t: 120,
             type: 'browser-fix-root-fixed',
@@ -17,6 +18,7 @@ test('exports the source timing trace without chat or input content', () => {
     }, { sillyTavernVersion: '1.18.0' }));
 
     assert.equal(report.source, 'SillyTavern browser-fixes.js');
+    assert.deepEqual(report.recorder, { installed: true, enabled: true });
     assert.equal(report.recordedEvents, 1);
     assert.equal(report.events[0].type, 'browser-fix-root-fixed');
     assert.equal(JSON.stringify(report).includes('message-'), false);
