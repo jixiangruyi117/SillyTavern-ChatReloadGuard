@@ -10,51 +10,70 @@ import {
 } from '../modules/ChatReloadGuardCore.js';
 import {
     createMobileKeyboardJankGuard,
-    isLikelyVirtualKeyboardTransition,
 } from '../modules/MobileKeyboardJankGuard.js';
 
-class FakeRoot {
+class FakeStyle {
     constructor() {
-        this.observers = new Set();
-        let position = '';
-        this.style = {};
-        Object.defineProperty(this.style, 'position', {
-            get: () => position,
-            set: value => {
-                position = value;
-                for (const observer of this.observers) observer.callback();
-            },
-        });
+        this.properties = new Map();
+    }
+
+    getPropertyValue(property) {
+        return this.properties.get(property)?.value ?? '';
+    }
+
+    getPropertyPriority(property) {
+        return this.properties.get(property)?.priority ?? '';
+    }
+
+    setProperty(property, value, priority = '') {
+        this.properties.set(property, { value, priority });
+    }
+
+    removeProperty(property) {
+        this.properties.delete(property);
     }
 }
 
-class FakeMutationObserver {
-    constructor(callback) {
-        this.callback = callback;
-        this.root = null;
-    }
-
-    observe(root) {
-        this.root = root;
-        root.observers.add(this);
-    }
-
-    disconnect() {
-        this.root?.observers.delete(this);
-        this.root = null;
+class FakeElement {
+    constructor(id) {
+        this.id = id;
+        this.style = new FakeStyle();
     }
 }
 
 function makeKeyboardGuardEnvironment() {
     const listeners = new Map();
-    const root = new FakeRoot();
+    const viewportListeners = new Map();
+    const documentListeners = new Map();
+    const root = new FakeElement('root');
+    const body = new FakeElement('body');
+    const sheld = new FakeElement('sheld');
+    const background = new FakeElement('bg1');
+    const dispatch = (registry, type) => {
+        for (const listener of registry.get(type) ?? []) listener();
+    };
     const windowHost = {
         innerWidth: 390,
         innerHeight: 844,
-        visualViewport: { width: 390, height: 844 },
+        visualViewport: {
+            width: 390,
+            height: 844,
+            addEventListener(type, listener) {
+                const entries = viewportListeners.get(type) ?? [];
+                entries.push(listener);
+                viewportListeners.set(type, entries);
+            },
+            removeEventListener(type, listener) {
+                viewportListeners.set(type, (viewportListeners.get(type) ?? []).filter(entry => entry !== listener));
+            },
+        },
         navigator: { maxTouchPoints: 1 },
-        MutationObserver: FakeMutationObserver,
         matchMedia: () => ({ matches: true }),
+        requestAnimationFrame(callback) {
+            callback();
+            return 0;
+        },
+        cancelAnimationFrame() {},
         addEventListener(type, listener, capture) {
             const entries = listeners.get(type) ?? [];
             entries.push({ listener, capture: Boolean(capture) });
@@ -69,8 +88,25 @@ function makeKeyboardGuardEnvironment() {
             for (const entry of entries) entry.listener();
         },
     };
-    const documentHost = { documentElement: root, activeElement: { tagName: 'TEXTAREA' } };
-    return { windowHost, documentHost, root };
+    const documentHost = {
+        documentElement: root,
+        body,
+        addEventListener(type, listener) {
+            const entries = documentListeners.get(type) ?? [];
+            entries.push(listener);
+            documentListeners.set(type, entries);
+        },
+        removeEventListener(type, listener) {
+            documentListeners.set(type, (documentListeners.get(type) ?? []).filter(entry => entry !== listener));
+        },
+        getElementById(id) {
+            return { sheld, bg1: background }[id] ?? null;
+        },
+        dispatch(type) {
+            dispatch(documentListeners, type);
+        },
+    };
+    return { windowHost, documentHost, root, body, sheld, background, dispatchViewport: type => dispatch(viewportListeners, type) };
 }
 
 function vulnerableReload() {
@@ -134,35 +170,13 @@ test('only enables on the audited vulnerable 1.18.0 flow', () => {
     assert.equal(fixed.status, 'changed');
 });
 
-test('recognizes opening and closing virtual keyboards but not an orientation resize', () => {
-    const input = { tagName: 'TEXTAREA' };
-    assert.equal(isLikelyVirtualKeyboardTransition({
-        previousViewport: { width: 390, height: 844 },
-        currentViewport: { width: 390, height: 520 },
-        activeElement: input,
-        wasKeyboardVisible: false,
-    }), true);
-    assert.equal(isLikelyVirtualKeyboardTransition({
-        previousViewport: { width: 390, height: 520 },
-        currentViewport: { width: 390, height: 844 },
-        activeElement: input,
-        wasKeyboardVisible: true,
-        keyboardBaselineHeight: 844,
-    }), true);
-    assert.equal(isLikelyVirtualKeyboardTransition({
-        previousViewport: { width: 390, height: 844 },
-        currentViewport: { width: 844, height: 390 },
-        activeElement: input,
-        wasKeyboardVisible: false,
-    }), false);
-});
-
-test('keeps resize listeners intact while removing only the keyboard-transition root fixed mutation', () => {
-    const { windowHost, documentHost, root } = makeKeyboardGuardEnvironment();
+test('synchronizes the shell to visual viewport pixels and restores styles after disabling', () => {
+    const { windowHost, documentHost, body, sheld, background, dispatchViewport } = makeKeyboardGuardEnvironment();
+    body.style.setProperty('height', '100dvh', 'important');
+    sheld.style.setProperty('height', 'calc(100dvh - 36px)');
     let nativeResizeHandlerRuns = 0;
     windowHost.addEventListener('resize', () => {
         nativeResizeHandlerRuns++;
-        root.style.position = 'fixed';
     });
 
     const guard = createMobileKeyboardJankGuard({ windowHost, documentHost });
@@ -172,20 +186,21 @@ test('keeps resize listeners intact while removing only the keyboard-transition 
     windowHost.dispatch('resize');
 
     assert.equal(nativeResizeHandlerRuns, 1);
-    assert.equal(root.style.position, '');
+    assert.equal(body.style.getPropertyValue('height'), '520px');
+    assert.equal(background.style.getPropertyValue('height'), '520px');
+    assert.equal(sheld.style.getPropertyValue('height'), 'calc(var(--chat-reload-guard-viewport-height) - var(--topBarBlockSize) - 1px)');
 
-    root.style.position = '';
-    windowHost.visualViewport.width = 844;
-    windowHost.visualViewport.height = 390;
-    windowHost.dispatch('resize');
-    assert.equal(nativeResizeHandlerRuns, 2);
-    assert.equal(root.style.position, 'fixed');
+    windowHost.visualViewport.height = 844;
+    dispatchViewport('resize');
+    assert.equal(nativeResizeHandlerRuns, 1);
+    assert.equal(body.style.getPropertyValue('height'), '844px');
 
     guard.setEnabled(false);
-    windowHost.visualViewport.height = 844;
     windowHost.dispatch('resize');
-    assert.equal(nativeResizeHandlerRuns, 3);
-    assert.equal(root.style.position, 'fixed');
+    assert.equal(nativeResizeHandlerRuns, 2);
+    assert.equal(body.style.getPropertyValue('height'), '100dvh');
+    assert.equal(background.style.getPropertyValue('height'), '');
+    assert.equal(sheld.style.getPropertyValue('height'), 'calc(100dvh - 36px)');
 });
 
 test('creates a detached in-memory snapshot', () => {

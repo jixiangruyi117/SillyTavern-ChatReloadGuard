@@ -1,110 +1,88 @@
-const DEFAULT_KEYBOARD_HEIGHT_THRESHOLD = 120;
-
-function isEditableElement(element) {
-    if (!element) return false;
-    if (element.isContentEditable) return true;
-
-    const tagName = String(element.tagName ?? '').toLowerCase();
-    return tagName === 'textarea' || tagName === 'input';
-}
-
-/**
- * Identifies viewport changes caused by opening or closing a virtual keyboard.
- * Width changes are intentionally excluded so orientation and split-screen
- * resizes continue through SillyTavern's original browser fixes unchanged.
- */
-export function isLikelyVirtualKeyboardTransition({
-    previousViewport,
-    currentViewport,
-    activeElement,
-    wasKeyboardVisible,
-    keyboardBaselineHeight = previousViewport?.height,
-    keyboardHeightThreshold = DEFAULT_KEYBOARD_HEIGHT_THRESHOLD,
-}) {
-    if (!previousViewport || !currentViewport) return false;
-
-    const widthChanged = Math.abs(currentViewport.width - previousViewport.width) > 1;
-    if (widthChanged) return false;
-
-    const keyboardVisible = isEditableElement(activeElement)
-        && keyboardBaselineHeight - currentViewport.height >= keyboardHeightThreshold;
-
-    return keyboardVisible || wasKeyboardVisible;
-}
-
-function readViewport(windowHost) {
-    const viewport = windowHost.visualViewport;
-    return {
-        width: Number(viewport?.width ?? windowHost.innerWidth ?? 0),
-        height: Number(viewport?.height ?? windowHost.innerHeight ?? 0),
-    };
-}
-
-function supportsMobileViewportGuard(windowHost) {
-    if (!windowHost?.visualViewport || typeof windowHost.MutationObserver !== 'function') {
-        return false;
-    }
+function supportsMobileViewportSync(windowHost) {
+    if (typeof windowHost?.visualViewport?.addEventListener !== 'function') return false;
 
     const coarsePointer = windowHost.matchMedia?.('(pointer: coarse)')?.matches;
     return coarsePointer || Number(windowHost.navigator?.maxTouchPoints ?? 0) > 0;
 }
 
+function readViewportHeight(windowHost) {
+    return Math.round(Number(windowHost.visualViewport?.height ?? 0));
+}
+
+function saveStyleProperty(element, property) {
+    return {
+        value: element.style.getPropertyValue(property),
+        priority: element.style.getPropertyPriority(property),
+    };
+}
+
+function restoreStyleProperty(element, property, saved) {
+    if (saved.value) {
+        element.style.setProperty(property, saved.value, saved.priority);
+    } else {
+        element.style.removeProperty(property);
+    }
+}
+
 /**
- * Avoids the single-frame root `position: fixed` workaround used by the
- * audited SillyTavern mobile resize handler only during a keyboard transition.
- * It observes that mutation instead of stopping resize propagation, so native
- * and third-party resize listeners continue to run normally.
+ * Synchronizes the application shell to visualViewport pixels while a mobile
+ * virtual keyboard changes size. It bypasses stale 100dvh calculations that
+ * leave #sheld and #bg1 at keyboard-open height after the keyboard closes.
  */
 export function createMobileKeyboardJankGuard({ windowHost = globalThis.window, documentHost = globalThis.document } = {}) {
     const root = documentHost?.documentElement;
+    const body = documentHost?.body;
+    const sheld = documentHost?.getElementById?.('sheld');
+    const background = documentHost?.getElementById?.('bg1');
+    const supported = Boolean(root && body && sheld && background && supportsMobileViewportSync(windowHost));
+    const savedStyles = new Map();
     let enabled = false;
-    let observer = null;
-    let previousViewport = null;
-    let keyboardBaselineHeight = 0;
-    let wasKeyboardVisible = false;
-    let keyboardTransitionPending = false;
-    let keyboardTransitionToken = 0;
+    let animationFrame = 0;
+    const delayedSyncs = new Set();
 
-    const supported = Boolean(root && supportsMobileViewportGuard(windowHost));
-
-    function onResize() {
-        const currentViewport = readViewport(windowHost);
-        const widthChanged = previousViewport && Math.abs(currentViewport.width - previousViewport.width) > 1;
-        keyboardTransitionPending = isLikelyVirtualKeyboardTransition({
-            previousViewport,
-            currentViewport,
-            activeElement: documentHost.activeElement,
-            wasKeyboardVisible,
-            keyboardBaselineHeight,
-        });
-
-        const activeElement = documentHost.activeElement;
-        wasKeyboardVisible = isEditableElement(activeElement)
-            && previousViewport
-            && keyboardBaselineHeight - currentViewport.height >= DEFAULT_KEYBOARD_HEIGHT_THRESHOLD;
-        previousViewport = currentViewport;
-        if (widthChanged || currentViewport.height > keyboardBaselineHeight) {
-            keyboardBaselineHeight = currentViewport.height;
-        }
-
-        if (keyboardTransitionPending && typeof windowHost.setTimeout === 'function') {
-            const transitionToken = ++keyboardTransitionToken;
-            windowHost.setTimeout(() => {
-                if (keyboardTransitionToken === transitionToken) {
-                    keyboardTransitionPending = false;
-                }
-            }, 0);
-        }
+    function remember(element, property) {
+        const key = `${element.id}:${property}`;
+        if (!savedStyles.has(key)) savedStyles.set(key, { element, property, saved: saveStyleProperty(element, property) });
     }
 
-    function onRootStyleMutation() {
-        if (!enabled || !keyboardTransitionPending || root.style.position !== 'fixed') {
+    function syncViewportHeight() {
+        animationFrame = 0;
+        const height = readViewportHeight(windowHost);
+        if (!enabled || height < 100) return;
+
+        remember(body, 'height');
+        remember(sheld, 'height');
+        remember(sheld, 'max-height');
+        remember(background, 'height');
+
+        const heightValue = `${height}px`;
+        root.style.setProperty('--chat-reload-guard-viewport-height', heightValue);
+        body.style.setProperty('height', heightValue, 'important');
+        background.style.setProperty('height', heightValue, 'important');
+        sheld.style.setProperty('height', 'calc(var(--chat-reload-guard-viewport-height) - var(--topBarBlockSize) - 1px)', 'important');
+        sheld.style.setProperty('max-height', 'calc(var(--chat-reload-guard-viewport-height) - var(--topBarBlockSize) - 1px)', 'important');
+    }
+
+    function scheduleViewportSync() {
+        if (!enabled || animationFrame) return;
+        if (typeof windowHost.requestAnimationFrame !== 'function') {
+            syncViewportHeight();
             return;
         }
+        animationFrame = windowHost.requestAnimationFrame(syncViewportHeight);
+    }
 
-        root.style.position = '';
-        keyboardTransitionPending = false;
-        keyboardTransitionToken++;
+    function scheduleSettledViewportSync() {
+        scheduleViewportSync();
+        if (typeof windowHost.setTimeout !== 'function') return;
+
+        for (const delay of [120, 360]) {
+            const timer = windowHost.setTimeout(() => {
+                delayedSyncs.delete(timer);
+                scheduleViewportSync();
+            }, delay);
+            delayedSyncs.add(timer);
+        }
     }
 
     function setEnabled(nextEnabled) {
@@ -112,28 +90,31 @@ export function createMobileKeyboardJankGuard({ windowHost = globalThis.window, 
             enabled = false;
             return { enabled, supported };
         }
-
-        if (Boolean(nextEnabled) === enabled) {
-            return { enabled, supported };
-        }
+        if (Boolean(nextEnabled) === enabled) return { enabled, supported };
 
         enabled = Boolean(nextEnabled);
         if (enabled) {
-            previousViewport = readViewport(windowHost);
-            keyboardBaselineHeight = previousViewport.height;
-            wasKeyboardVisible = false;
-            keyboardTransitionPending = false;
-            keyboardTransitionToken++;
-            observer = new windowHost.MutationObserver(onRootStyleMutation);
-            observer.observe(root, { attributes: true, attributeFilter: ['style'] });
-            windowHost.addEventListener('resize', onResize, true);
+            windowHost.addEventListener('resize', scheduleViewportSync);
+            windowHost.visualViewport.addEventListener('resize', scheduleViewportSync);
+            documentHost.addEventListener('focusin', scheduleSettledViewportSync);
+            documentHost.addEventListener('focusout', scheduleSettledViewportSync);
+            syncViewportHeight();
         } else {
-            windowHost.removeEventListener('resize', onResize, true);
-            observer?.disconnect();
-            observer = null;
-            keyboardTransitionPending = false;
-            keyboardTransitionToken++;
-            wasKeyboardVisible = false;
+            windowHost.removeEventListener('resize', scheduleViewportSync);
+            windowHost.visualViewport.removeEventListener('resize', scheduleViewportSync);
+            documentHost.removeEventListener('focusin', scheduleSettledViewportSync);
+            documentHost.removeEventListener('focusout', scheduleSettledViewportSync);
+            if (animationFrame && typeof windowHost.cancelAnimationFrame === 'function') {
+                windowHost.cancelAnimationFrame(animationFrame);
+            }
+            animationFrame = 0;
+            for (const timer of delayedSyncs) windowHost.clearTimeout?.(timer);
+            delayedSyncs.clear();
+            for (const { element, property, saved } of savedStyles.values()) {
+                restoreStyleProperty(element, property, saved);
+            }
+            savedStyles.clear();
+            root.style.removeProperty('--chat-reload-guard-viewport-height');
         }
 
         return { enabled, supported };
