@@ -30,26 +30,3 @@
 .chat-reload-guard__note {
     opacity: 0.8;
 }
-
-.chat-reload-guard__setting {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6rem;
-    margin: 0.9rem 0 0.4rem;
-    cursor: pointer;
-}
-
-.chat-reload-guard__setting input {
-    flex: 0 0 auto;
-    margin-top: 0.2rem;
-}
-
-.chat-reload-guard__setting span {
-    display: grid;
-    gap: 0.25rem;
-}
-
-.chat-reload-guard__setting small {
-    opacity: 0.8;
-    line-height: 1.35;
-}

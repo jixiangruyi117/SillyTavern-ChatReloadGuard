@@ -2,14 +2,10 @@ import {
     installReloadGuard,
     inspectCompatibility,
 } from './modules/ChatReloadGuardCore.js';
-import { createMobileKeyboardJankGuard } from './modules/MobileKeyboardJankGuard.js';
 
 const EXTENSION_FOLDER = 'third-party/SillyTavern-ChatReloadGuard';
 const STATUS_ID = 'chat-reload-guard-status';
 const DETAIL_ID = 'chat-reload-guard-detail';
-const MOBILE_KEYBOARD_TOGGLE_ID = 'chat-reload-guard-mobile-keyboard-toggle';
-const MOBILE_KEYBOARD_STATUS_ID = 'chat-reload-guard-mobile-keyboard-status';
-const SETTINGS_KEY = 'sillyTavernChatReloadGuard';
 
 function showToast(level, message, title, persistent = false) {
     const toast = globalThis.toastr?.[level];
@@ -48,48 +44,6 @@ function formatVersion(versionInfo) {
     return `${versionInfo?.pkgVersion ?? '未知版本'}${revision}`;
 }
 
-function getMobileKeyboardSetting(context) {
-    return context.extensionSettings?.[SETTINGS_KEY]?.mobileKeyboardJankGuard === true;
-}
-
-function saveMobileKeyboardSetting(context, enabled) {
-    if (!context.extensionSettings) return;
-    context.extensionSettings[SETTINGS_KEY] ??= {};
-    context.extensionSettings[SETTINGS_KEY].mobileKeyboardJankGuard = enabled;
-    context.saveSettingsDebounced?.();
-}
-
-function updateMobileKeyboardStatus(label) {
-    const statusElement = document.getElementById(MOBILE_KEYBOARD_STATUS_ID);
-    if (statusElement) statusElement.textContent = label;
-}
-
-function installMobileKeyboardToggle(context) {
-    const toggle = document.getElementById(MOBILE_KEYBOARD_TOGGLE_ID);
-    if (!toggle) return;
-
-    const guard = createMobileKeyboardJankGuard();
-    const savedEnabled = getMobileKeyboardSetting(context);
-    toggle.checked = savedEnabled;
-
-    const apply = enabled => {
-        const result = guard.setEnabled(enabled);
-        if (!result.supported) {
-            updateMobileKeyboardStatus('当前设备不满足移动端视口优化条件，设置会在兼容的移动浏览器中生效。');
-            return;
-        }
-        updateMobileKeyboardStatus(result.enabled
-            ? '已启用：仅在软键盘打开或收起时撤销酒馆的临时根节点固定定位。'
-            : '未启用：不会改变酒馆的原始视口处理。');
-    };
-
-    apply(savedEnabled);
-    toggle.addEventListener('change', () => {
-        saveMobileKeyboardSetting(context, toggle.checked);
-        apply(toggle.checked);
-    });
-}
-
 export async function activate() {
     const context = globalThis.SillyTavern?.getContext?.();
     if (!context) {
@@ -98,7 +52,6 @@ export async function activate() {
     }
 
     await mountStatusPanel(context);
-    installMobileKeyboardToggle(context);
 
     try {
         const [versionInfo, scriptModule] = await Promise.all([
