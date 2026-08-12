@@ -31,50 +31,32 @@
     opacity: 0.8;
 }
 
-html.chat-reload-guard-mobile-viewport body {
-    height: var(--chat-reload-guard-app-height) !important;
-}
-
-html.chat-reload-guard-mobile-viewport :is(#bg1, #bg_custom) {
-    height: var(--chat-reload-guard-app-height) !important;
-}
-
-html.chat-reload-guard-mobile-viewport #sheld {
-    height: calc(var(--chat-reload-guard-app-height) - var(--topBarBlockSize) - 1px) !important;
-    max-height: calc(var(--chat-reload-guard-app-height) - var(--topBarBlockSize) - 1px) !important;
-}
-
-.chat-reload-guard__setting {
+.chat-reload-guard__source-trace {
     display: flex;
     align-items: flex-start;
     gap: 0.6rem;
-    margin: 0.9rem 0 0.4rem;
+    margin-top: 0.9rem;
     cursor: pointer;
 }
 
-.chat-reload-guard__setting input {
-    flex: 0 0 auto;
-    margin-top: 0.2rem;
-}
-
-.chat-reload-guard__setting span {
+.chat-reload-guard__source-trace span {
     display: grid;
     gap: 0.25rem;
 }
 
-.chat-reload-guard__setting small {
+.chat-reload-guard__source-trace small {
     opacity: 0.8;
     line-height: 1.35;
 }
 
-.chat-reload-guard__diagnostics-actions {
+.chat-reload-guard__source-trace-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.5rem;
 }
 
-.chat-reload-guard__diagnostics-actions .menu_button {
+.chat-reload-guard__source-trace-actions .menu_button {
     min-height: 44px;
     width: auto;
 }

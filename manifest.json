@@ -4,8 +4,8 @@
   "js": "index.js",
   "css": "style.css",
   "author": "SRL",
-  "version": "0.3.5",
-  "description": "保护聊天重载，并提供可关闭的移动端软键盘高度修复与只读诊断。",
+  "version": "0.4.0",
+  "description": "防止危险聊天重载，并提供只读的酒馆源码键盘时序取证。",
   "auto_update": true,
   "hooks": {
     "activate": "activate"

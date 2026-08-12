@@ -14,25 +14,17 @@
         <p class="chat-reload-guard__note">
             插件只在一次聊天重载期间保护当前会话；聊天快照仅保存在内存中，不会写入设置、日志或服务器。
         </p>
-        <label class="chat-reload-guard__setting" for="chat-reload-guard-mobile-fix">
-            <input id="chat-reload-guard-mobile-fix" type="checkbox">
+        <label class="chat-reload-guard__source-trace" for="chat-reload-guard-source-trace">
+            <input id="chat-reload-guard-source-trace" type="checkbox">
             <span>
-                <b>修复移动端软键盘高度残留</b>
-                <small>记录键盘弹出前的稳定页面高度；收起输入法时立即恢复聊天区域，避免输入栏下方留下黑色空白。默认关闭，可随时恢复酒馆原行为。</small>
+                <b>记录酒馆源码键盘时序（只读）</b>
+                <small>仅记录输入框焦点、长任务、resize 与酒馆根节点定位写入/恢复；不改布局，不读取聊天或输入内容。</small>
             </span>
         </label>
-        <p id="chat-reload-guard-mobile-fix-status" class="chat-reload-guard__detail">未启用。</p>
-        <label class="chat-reload-guard__setting" for="chat-reload-guard-mobile-diagnostics">
-            <input id="chat-reload-guard-mobile-diagnostics" type="checkbox">
-            <span>
-                <b>记录移动端键盘诊断（只读）</b>
-                <small>失焦当刻停止接收新的长任务与 resize，只保留已排定的 600ms 取证点；完整读取只发生在锚点和定时点，避免诊断本身造成卡顿。</small>
-            </span>
-        </label>
-        <p id="chat-reload-guard-mobile-diagnostics-status" class="chat-reload-guard__detail">未记录。</p>
-        <div class="chat-reload-guard__diagnostics-actions">
-            <button id="chat-reload-guard-copy-diagnostics" type="button" class="menu_button">复制精简诊断</button>
-            <button id="chat-reload-guard-clear-diagnostics" type="button" class="menu_button">清空诊断</button>
+        <p id="chat-reload-guard-source-trace-status" class="chat-reload-guard__detail">未启用。</p>
+        <div class="chat-reload-guard__source-trace-actions">
+            <button id="chat-reload-guard-copy-source-trace" type="button" class="menu_button">复制源码时序</button>
+            <button id="chat-reload-guard-clear-source-trace" type="button" class="menu_button">清空源码时序</button>
         </div>
     </div>
 </div>
