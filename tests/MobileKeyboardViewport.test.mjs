@@ -194,9 +194,10 @@ test('diagnostics are bounded and contain geometry but no chat or input content'
     assert.equal(report.recordedEvents, 120);
     assert.equal(report.exportedEvents, 18);
     assert.equal(report.events[0].e, 'keyboard-focusin');
-    assert.equal(report.events.at(-1).r[3], 844);
-    assert.equal(report.events.at(-1).h[3], 844);
-    assert.equal(report.events.at(-1).a, 'body');
+    const focusOut = report.events.find(event => event.e === 'keyboard-focusout');
+    assert.equal(focusOut.r[3], 844);
+    assert.equal(focusOut.h[3], 844);
+    assert.equal(focusOut.a, 'body');
     assert.ok(reportText.length < 6000);
     assert.equal(reportText.includes('chat-a'), false);
     assert.equal(reportText.includes('message'), false);
@@ -211,6 +212,9 @@ test('diagnostics stops capturing after a keyboard cycle settles', () => {
     env.documentHost.dispatch('focusin', env.textarea);
     env.documentHost.activeElement = env.body;
     env.documentHost.dispatch('focusout', env.textarea);
+    const eventCountAtBlur = diagnostics.eventCount;
+    diagnostics.record('after-blur-long-task', { duration: 120 });
+    assert.equal(diagnostics.eventCount, eventCountAtBlur);
     env.flushTimers();
     const eventCount = diagnostics.eventCount;
 

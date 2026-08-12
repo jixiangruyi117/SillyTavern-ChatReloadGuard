@@ -245,6 +245,7 @@ export function createMobileKeyboardDiagnostics({
     let cycleSequence = 0;
     let resizeTimer = 0;
     const resizeSources = new Set();
+    const settlingCycles = new Set();
 
     function trimEvents() {
         while (events.length > MAX_DIAGNOSTIC_EVENTS) {
@@ -258,7 +259,7 @@ export function createMobileKeyboardDiagnostics({
     }
 
     function snapshot(type, details = {}, cycle = activeCycle, includeLayout = true) {
-        if (!enabled || !cycle || cycle !== activeCycle) return;
+        if (!enabled || !cycle || (cycle !== activeCycle && !settlingCycles.has(cycle))) return;
         const heights = readHeights(windowHost, documentHost);
         const rootStyle = includeLayout ? windowHost.getComputedStyle?.(documentHost.documentElement) : null;
         const body = includeLayout ? documentHost.body : null;
@@ -310,12 +311,12 @@ export function createMobileKeyboardDiagnostics({
         }
     }
 
-    function closeCycleAfterSettling(cycle) {
+    function finishSettlingCycle(cycle) {
         if (typeof windowHost.setTimeout !== 'function') return;
         const timer = windowHost.setTimeout(() => {
             timers.delete(timer);
-            if (activeCycle === cycle) activeCycle = 0;
-        }, 700);
+            settlingCycles.delete(cycle);
+        }, 650);
         timers.add(timer);
     }
 
@@ -345,8 +346,10 @@ export function createMobileKeyboardDiagnostics({
         focusOut: event => {
             if (!isKeyboardEditable(event?.target) || !activeCycle) return;
             const cycle = activeCycle;
+            settlingCycles.add(cycle);
             snapshotSequence('keyboard-focusout', cycle);
-            closeCycleAfterSettling(cycle);
+            activeCycle = 0;
+            finishSettlingCycle(cycle);
         },
     };
 
@@ -358,6 +361,7 @@ export function createMobileKeyboardDiagnostics({
             events.length = 0;
             activeCycle = 0;
             cycleSequence = 0;
+            settlingCycles.clear();
             if (typeof documentHost.createElement === 'function' && documentHost.body) {
                 dynamicViewportProbe = documentHost.createElement('div');
                 dynamicViewportProbe.setAttribute('aria-hidden', 'true');
@@ -391,6 +395,7 @@ export function createMobileKeyboardDiagnostics({
             timers.clear();
             resizeTimer = 0;
             resizeSources.clear();
+            settlingCycles.clear();
             dynamicViewportProbe?.remove();
             dynamicViewportProbe = null;
             activeCycle = 0;
@@ -404,7 +409,7 @@ export function createMobileKeyboardDiagnostics({
     }
 
     function selectRecentKeyboardCycle() {
-        const latestCycle = events.at(-1)?.cycle;
+        const latestCycle = Math.max(0, ...events.map(event => event.cycle));
         const recent = latestCycle ? events.filter(event => event.cycle === latestCycle) : [];
         if (recent.length <= MAX_EXPORTED_EVENTS) return recent;
 
