@@ -23,7 +23,7 @@
 
 | 项目 | 状态 |
 | --- | --- |
-| 扩展版本 | `0.1.0` |
+| 扩展版本 | `0.3.0` |
 | 支持的 SillyTavern 版本 | `1.18.0` |
 | 实机验证基线 | SillyTavern `1.18.0 (51ad27f)` |
 | 运行方式 | 用户级第三方 UI 扩展，不修改 SillyTavern 核心文件 |
@@ -180,6 +180,17 @@ data/<用户>/extensions/SillyTavern-ChatReloadGuard
 
 备份目录和保留数量取决于 SillyTavern 配置。本扩展本身不创建磁盘备份，也不自动替用户选择或覆盖恢复文件。
 
+## 移动端软键盘高度修复与只读诊断
+
+扩展设置中提供两个默认关闭、彼此独立的选项：
+
+- **修复移动端软键盘高度残留**：输入框聚焦前保存页面稳定高度。软键盘打开时使用真实可见高度，失焦时立即恢复键盘前高度，不等待某些 Android 浏览器迟到的视口更新。
+- **记录移动端键盘诊断（只读）**：最多在当前页面内存保存 120 条事件，可复制或清空。报告只包含版本、浏览器标识、视口/屏幕尺寸、`100dvh` 实测像素、焦点元素标识、聊天壳体计算样式/坐标、修复动作与长任务耗时；不包含聊天正文、输入内容、账号、凭证或网络请求。
+
+建议测试时同时开启两项，依次执行“点输入框 → 等键盘完全打开 → 收起键盘 → 等黑块出现或页面恢复”，然后点击“复制诊断报告”。如果修复导致新的定位异常，先关闭修复开关；只读诊断可以继续开启以保留证据。
+
+此功能针对已审计的 SillyTavern 1.18.0 移动布局链，真机复验完成前不声明所有 Android 浏览器均已修复。
+
 ## 验证与测试
 
 环境要求：本项目使用 Node.js 内置测试运行器，没有运行时 npm 依赖。
@@ -217,11 +228,13 @@ SillyTavern-ChatReloadGuard/
 ├── index.js                         # 扩展初始化、设置状态与 SillyTavern 接口注入
 ├── manifest.json                    # SillyTavern 扩展清单
 ├── modules/
-│   └── ChatReloadGuardCore.js       # 兼容检查、快照、请求保护和恢复核心
+│   ├── ChatReloadGuardCore.js       # 兼容检查、快照、请求保护和恢复核心
+│   └── MobileKeyboardViewport.js    # 稳定高度恢复与只读诊断
 ├── settings.html                    # 扩展设置面板
 ├── style.css                        # 设置面板样式
 ├── tests/
-│   └── chatReloadGuard.test.mjs     # 故障链和兼容回归测试
+│   ├── ChatReloadGuard.test.mjs     # 故障链和兼容回归测试
+│   └── MobileKeyboardViewport.test.mjs # 移动视口与诊断回归测试
 ├── CHANGELOG.md                     # 版本变化
 └── WORK_LOG.md                      # 根因、方案和验证记录
 ```

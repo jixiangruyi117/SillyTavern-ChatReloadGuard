@@ -2,10 +2,20 @@ import {
     installReloadGuard,
     inspectCompatibility,
 } from './modules/ChatReloadGuardCore.js';
+import {
+    createMobileKeyboardDiagnostics,
+    createMobileKeyboardViewportFix,
+} from './modules/MobileKeyboardViewport.js';
 
 const EXTENSION_FOLDER = 'third-party/SillyTavern-ChatReloadGuard';
+const EXTENSION_VERSION = '0.3.0';
+const SETTINGS_KEY = 'sillyTavernChatReloadGuard';
 const STATUS_ID = 'chat-reload-guard-status';
 const DETAIL_ID = 'chat-reload-guard-detail';
+const MOBILE_FIX_ID = 'chat-reload-guard-mobile-fix';
+const MOBILE_FIX_STATUS_ID = 'chat-reload-guard-mobile-fix-status';
+const DIAGNOSTICS_ID = 'chat-reload-guard-mobile-diagnostics';
+const DIAGNOSTICS_STATUS_ID = 'chat-reload-guard-mobile-diagnostics-status';
 
 function showToast(level, message, title, persistent = false) {
     const toast = globalThis.toastr?.[level];
@@ -44,6 +54,102 @@ function formatVersion(versionInfo) {
     return `${versionInfo?.pkgVersion ?? '未知版本'}${revision}`;
 }
 
+function getExtensionSettings(context) {
+    if (!context.extensionSettings) return { mobileKeyboardFix: false, mobileKeyboardDiagnostics: false };
+    context.extensionSettings[SETTINGS_KEY] ??= {};
+    return context.extensionSettings[SETTINGS_KEY];
+}
+
+function saveExtensionSetting(context, key, value) {
+    const settings = getExtensionSettings(context);
+    settings[key] = value;
+    context.saveSettingsDebounced?.();
+}
+
+function setText(id, text) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = text;
+}
+
+async function copyText(text) {
+    if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+}
+
+function installMobileKeyboardTools(context, sillyTavernVersion, repairSupported) {
+    const fixToggle = document.getElementById(MOBILE_FIX_ID);
+    const diagnosticsToggle = document.getElementById(DIAGNOSTICS_ID);
+    const copyButton = document.getElementById('chat-reload-guard-copy-diagnostics');
+    const clearButton = document.getElementById('chat-reload-guard-clear-diagnostics');
+    if (!fixToggle || !diagnosticsToggle || !copyButton || !clearButton) return;
+
+    const settings = getExtensionSettings(context);
+    const diagnostics = createMobileKeyboardDiagnostics({
+        extensionVersion: EXTENSION_VERSION,
+        getSillyTavernVersion: () => sillyTavernVersion,
+        onUpdate: count => setText(DIAGNOSTICS_STATUS_ID, count ? `已在内存记录 ${count} 条事件。` : '诊断记录已清空。'),
+    });
+    const viewportFix = createMobileKeyboardViewportFix({
+        onEvent: (type, details) => diagnostics.record(`fix:${type}`, details),
+    });
+
+    const applyFix = enabled => {
+        const result = viewportFix.setEnabled(enabled);
+        fixToggle.checked = result.enabled;
+        setText(MOBILE_FIX_STATUS_ID, !result.supported
+            ? '当前环境不支持移动端可视视口修复；设置仅会在兼容移动浏览器生效。'
+            : result.enabled
+                ? `已启用，当前稳定高度 ${viewportFix.baselineHeight}px。`
+                : '未启用，不改变酒馆原始布局。');
+    };
+
+    fixToggle.disabled = !repairSupported;
+    fixToggle.checked = repairSupported && settings.mobileKeyboardFix === true;
+    diagnosticsToggle.checked = settings.mobileKeyboardDiagnostics === true;
+    diagnostics.setEnabled(diagnosticsToggle.checked);
+    if (repairSupported) {
+        applyFix(fixToggle.checked);
+    } else {
+        setText(MOBILE_FIX_STATUS_ID, `${sillyTavernVersion} 尚未审计此项修复，开关已停用；只读诊断仍可使用。`);
+    }
+
+    fixToggle.addEventListener('change', () => {
+        saveExtensionSetting(context, 'mobileKeyboardFix', fixToggle.checked);
+        applyFix(fixToggle.checked);
+    });
+    diagnosticsToggle.addEventListener('change', () => {
+        saveExtensionSetting(context, 'mobileKeyboardDiagnostics', diagnosticsToggle.checked);
+        diagnostics.setEnabled(diagnosticsToggle.checked);
+        setText(DIAGNOSTICS_STATUS_ID, diagnostics.enabled ? `已启用，当前 ${diagnostics.eventCount} 条事件。` : '未记录。');
+    });
+    copyButton.addEventListener('click', async () => {
+        try {
+            await copyText(diagnostics.exportReport());
+            setText(DIAGNOSTICS_STATUS_ID, `已复制 ${diagnostics.eventCount} 条只读诊断事件。`);
+        } catch (error) {
+            setText(DIAGNOSTICS_STATUS_ID, `复制失败：${String(error?.message ?? error)}`);
+        }
+    });
+    clearButton.addEventListener('click', () => diagnostics.clear());
+
+    return {
+        setSillyTavernVersion(value) {
+            diagnostics.record('sillytavern-version', { value });
+        },
+    };
+}
+
 export async function activate() {
     const context = globalThis.SillyTavern?.getContext?.();
     if (!context) {
@@ -52,7 +158,6 @@ export async function activate() {
     }
 
     await mountStatusPanel(context);
-
     try {
         const [versionInfo, scriptModule] = await Promise.all([
             getVersionInfo(),
@@ -60,6 +165,8 @@ export async function activate() {
         ]);
         const compatibility = inspectCompatibility({ versionInfo, moduleNamespace: scriptModule });
         const versionLabel = formatVersion(versionInfo);
+        const mobileKeyboardTools = installMobileKeyboardTools(context, versionLabel, versionInfo?.pkgVersion === '1.18.0');
+        mobileKeyboardTools?.setSillyTavernVersion(versionLabel);
 
         if (compatibility.status === 'unsupported') {
             updateStatus('unsupported', '未启用', `${versionLabel}：${compatibility.reason}`);
