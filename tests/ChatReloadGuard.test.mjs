@@ -8,6 +8,70 @@ import {
     inspectCompatibility,
     installReloadGuard,
 } from '../modules/ChatReloadGuardCore.js';
+import {
+    createMobileKeyboardJankGuard,
+    isLikelyVirtualKeyboardTransition,
+} from '../modules/MobileKeyboardJankGuard.js';
+
+class FakeRoot {
+    constructor() {
+        this.observers = new Set();
+        let position = '';
+        this.style = {};
+        Object.defineProperty(this.style, 'position', {
+            get: () => position,
+            set: value => {
+                position = value;
+                for (const observer of this.observers) observer.callback();
+            },
+        });
+    }
+}
+
+class FakeMutationObserver {
+    constructor(callback) {
+        this.callback = callback;
+        this.root = null;
+    }
+
+    observe(root) {
+        this.root = root;
+        root.observers.add(this);
+    }
+
+    disconnect() {
+        this.root?.observers.delete(this);
+        this.root = null;
+    }
+}
+
+function makeKeyboardGuardEnvironment() {
+    const listeners = new Map();
+    const root = new FakeRoot();
+    const windowHost = {
+        innerWidth: 390,
+        innerHeight: 844,
+        visualViewport: { width: 390, height: 844 },
+        navigator: { maxTouchPoints: 1 },
+        MutationObserver: FakeMutationObserver,
+        matchMedia: () => ({ matches: true }),
+        addEventListener(type, listener, capture) {
+            const entries = listeners.get(type) ?? [];
+            entries.push({ listener, capture: Boolean(capture) });
+            listeners.set(type, entries);
+        },
+        removeEventListener(type, listener, capture) {
+            const entries = listeners.get(type) ?? [];
+            listeners.set(type, entries.filter(entry => entry.listener !== listener || entry.capture !== Boolean(capture)));
+        },
+        dispatch(type) {
+            const entries = [...(listeners.get(type) ?? [])].sort((a, b) => Number(b.capture) - Number(a.capture));
+            for (const entry of entries) entry.listener();
+        },
+    };
+    const documentHost = { documentElement: root, activeElement: { tagName: 'TEXTAREA' } };
+    return { windowHost, documentHost, root };
+}
 
 function vulnerableReload() {
     clearChat({ clearData: true });
@@ -68,6 +132,60 @@ test('only enables on the audited vulnerable 1.18.0 flow', () => {
         moduleNamespace: { reloadChatMutex: mutex, getChat: async function getChat() {} },
     });
     assert.equal(fixed.status, 'changed');
+});
+
+test('recognizes opening and closing virtual keyboards but not an orientation resize', () => {
+    const input = { tagName: 'TEXTAREA' };
+    assert.equal(isLikelyVirtualKeyboardTransition({
+        previousViewport: { width: 390, height: 844 },
+        currentViewport: { width: 390, height: 520 },
+        activeElement: input,
+        wasKeyboardVisible: false,
+    }), true);
+    assert.equal(isLikelyVirtualKeyboardTransition({
+        previousViewport: { width: 390, height: 520 },
+        currentViewport: { width: 390, height: 844 },
+        activeElement: input,
+        wasKeyboardVisible: true,
+        keyboardBaselineHeight: 844,
+    }), true);
+    assert.equal(isLikelyVirtualKeyboardTransition({
+        previousViewport: { width: 390, height: 844 },
+        currentViewport: { width: 844, height: 390 },
+        activeElement: input,
+        wasKeyboardVisible: false,
+    }), false);
+});
+
+test('keeps resize listeners intact while removing only the keyboard-transition root fixed mutation', () => {
+    const { windowHost, documentHost, root } = makeKeyboardGuardEnvironment();
+    let nativeResizeHandlerRuns = 0;
+    windowHost.addEventListener('resize', () => {
+        nativeResizeHandlerRuns++;
+        root.style.position = 'fixed';
+    });
+
+    const guard = createMobileKeyboardJankGuard({ windowHost, documentHost });
+    assert.equal(guard.supported, true);
+    guard.setEnabled(true);
+    windowHost.visualViewport.height = 520;
+    windowHost.dispatch('resize');
+
+    assert.equal(nativeResizeHandlerRuns, 1);
+    assert.equal(root.style.position, '');
+
+    root.style.position = '';
+    windowHost.visualViewport.width = 844;
+    windowHost.visualViewport.height = 390;
+    windowHost.dispatch('resize');
+    assert.equal(nativeResizeHandlerRuns, 2);
+    assert.equal(root.style.position, 'fixed');
+
+    guard.setEnabled(false);
+    windowHost.visualViewport.height = 844;
+    windowHost.dispatch('resize');
+    assert.equal(nativeResizeHandlerRuns, 3);
+    assert.equal(root.style.position, 'fixed');
 });
 
 test('creates a detached in-memory snapshot', () => {

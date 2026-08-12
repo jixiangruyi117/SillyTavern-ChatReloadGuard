@@ -4,7 +4,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "SRL",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "防止切换正则或预设时因聊天重载失败而把历史记录覆盖成开场白。",
   "auto_update": true,
   "hooks": {

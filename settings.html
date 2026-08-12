@@ -14,5 +14,15 @@
         <p class="chat-reload-guard__note">
             插件只在一次聊天重载期间保护当前会话；聊天快照仅保存在内存中，不会写入设置、日志或服务器。
         </p>
+        <label class="chat-reload-guard__setting" for="chat-reload-guard-mobile-keyboard-toggle">
+            <input id="chat-reload-guard-mobile-keyboard-toggle" type="checkbox">
+            <span>
+                <b>优化移动端软键盘切换卡顿</b>
+                <small>减少打开或收起输入法时的短暂停顿与黑色空白。仅在移动浏览器生效；若出现界面异常可随时关闭。</small>
+            </span>
+        </label>
+        <p id="chat-reload-guard-mobile-keyboard-status" class="chat-reload-guard__detail">
+            未启用：不会改变酒馆的原始视口处理。
+        </p>
     </div>
 </div>
