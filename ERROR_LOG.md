@@ -28,3 +28,9 @@
 - 风险点：清空发生在读取成功之前；失败分支仍允许整份聊天写回。
 - 回归要求：读取失败不得减少当前聊天，重载期间不得把多条消息保存成更短聊天，未知酒馆版本不得自动接管。
 
+## 2026-08-20：Android Chromium 的嵌套 `:has()` 长期失效计算
+
+- 根因证据：SillyTavern 1.18.0 顶部 drawer 的三条规则同时嵌套 `body:has(...)` 与 `#top-settings-holder:has(.drawer-content.openDrawer:not(.fillLeft):not(.fillRight))`；Android Chromium 在 drawer 打开后持续触发 `:has()` invalidation。
+- 修复边界：仅在移动端从 CSSOM 删除原始 `CSSStyleRule`，不覆盖层级，不改 viewport、键盘高度、`resize` 或 SillyTavern 核心文件。
+- 防复发：遍历嵌套规则容器时，当前不匹配的 `@media` 不深入删除，避免未来官方把规则转为 desktop-only 后仍被扩展误删。
+

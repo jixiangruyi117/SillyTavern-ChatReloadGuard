@@ -20,3 +20,9 @@
 - 本次复核：补充端到端故障注入，完整模拟 `clearChat` 后读取 503、空聊天初始化和开场白保存，确认保护器返回原快照且保存请求为 0；另验证不同聊天的插件保存请求不被拦截。
 - 文档发布：README 只依据现有源码、测试和上述实机结果扩写，明确支持范围、已知边界和二次开发约束。
 - 授权与反馈：按维护者决定加入未经改写的 `PolyForm Noncommercial License 1.0.0` 正式文本，并使用 SPDX 标识写入 `package.json`；README 首部说明由 GPT 辅助整理，内容问题统一通过仓库 GitHub Issues 反馈。
+
+## 2026-08-20
+
+- 发布 `0.5.0`：删除未直接修复问题的移动端键盘源码取证、点击/焦点监听与性能观察器逻辑。
+- 根因修复：在 `activate()` 的最开始，仅对 `max-width: 1000px` 的页面从 CSSOM 删除 SillyTavern 1.18.0 顶部 drawer 的三条嵌套 `:has()` 规则；桌面和当前不匹配的 desktop-only `@media` 不改动。
+- 验证：`npm run check` 通过，17 项测试覆盖聊天重载保护及 CSSOM 选择器、移动端删除、桌面跳过、desktop-only `@media` 跳过和安全空结果。

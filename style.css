@@ -30,33 +30,3 @@
 .chat-reload-guard__note {
     opacity: 0.8;
 }
-
-.chat-reload-guard__source-trace {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6rem;
-    margin-top: 0.9rem;
-    cursor: pointer;
-}
-
-.chat-reload-guard__source-trace span {
-    display: grid;
-    gap: 0.25rem;
-}
-
-.chat-reload-guard__source-trace small {
-    opacity: 0.8;
-    line-height: 1.35;
-}
-
-.chat-reload-guard__source-trace-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-}
-
-.chat-reload-guard__source-trace-actions .menu_button {
-    min-height: 44px;
-    width: auto;
-}
