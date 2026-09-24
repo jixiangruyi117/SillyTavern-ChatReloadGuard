@@ -1,0 +1,13 @@
+{
+  "display_name": "聊天重载保护器",
+  "loading_order": 9999,
+  "js": "index.js?v=0.5.2",
+  "css": "style.css?v=0.5.2",
+  "author": "SRL",
+  "version": "0.5.2",
+  "description": "防止危险聊天重载，并修复 Android Chromium 的 :has() 键盘与交互卡顿。",
+  "auto_update": true,
+  "hooks": {
+    "activate": "activate"
+  }
+}
