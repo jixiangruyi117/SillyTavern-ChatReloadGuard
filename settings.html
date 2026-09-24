@@ -1,0 +1,18 @@
+<div class="chat-reload-guard inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>聊天重载保护器</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <div class="chat-reload-guard__summary">
+            <span>运行状态</span>
+            <strong id="chat-reload-guard-status" data-status="checking">检查中</strong>
+        </div>
+        <p id="chat-reload-guard-detail" class="chat-reload-guard__detail">
+            正在核对 SillyTavern 版本和聊天重载接口。
+        </p>
+        <p class="chat-reload-guard__note">
+            插件只在一次聊天重载期间保护当前会话；聊天快照仅保存在内存中，不会写入设置、日志或服务器。
+        </p>
+    </div>
+</div>

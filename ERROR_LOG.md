@@ -1,0 +1,36 @@
+# 问题记录
+
+## 2026-08-12：本地源码修改并不等于手机实际加载该源码
+
+- 证据：真机报告 `recorder.installed: false`、`recordedEvents: 0`，说明手机运行中的页面没有执行本机修改过的 `browser-fixes.js`。
+- 结论：不能据此继续判断或修改 `fixFunkyPositioning`；键盘卡顿和展开/收缩卡顿已扩大为全局交互问题。
+- 补充证据：实际返回脚本为 3611 字节，恰好等于本机改动前的 `browser-fixes.js`；点击 `#cocktail-plus-drawer` 后出现多段 70ms 级长任务，另有 744ms 阻塞尚无调用归因。
+- 防复发：诊断报告必须读取当前页面同源实际返回的 `browser-fixes.js` 指纹，并在 Chrome 可用时保留 Long Animation Frames 的脚本路径和布局耗时；未确认实际服务来源前，不将本机源码修改视为真机验证。
+
+## 2026-08-12：撤回未被真机证实的保护器键盘干预
+
+- 证据：多轮真机报告中键盘周期的 `innerHeight`、`visualViewport.height`、根元素高度与 `100dvh` 均未变化，保护器的高度写入没有可验证收益；此前诊断也无法提供长任务调用栈。
+- 处置：撤回 `63e5742` 之后所有移动端键盘 CSS、高度写入、视口监听与扩展级性能诊断，聊天重载保护保留。
+- 后续：仅由酒馆源码记录输入焦点、长任务、resize 和 `fixFunkyPositioning` 的根节点定位写入/恢复；未取得同一真机周期的源码时序前，不修改该 hack 的行为。
+
+## 2026-08-12：两次移动端软键盘缓解均未通过真机验证
+
+- 现象：Android 设备打开输入框时卡顿；收起软键盘后输入栏可能停在键盘打开时的位置，底部露出大块黑色区域。
+- 已否定方案一：仅撤销 SillyTavern 移动端 `resize` 回调写入的根节点 `position: fixed`。用户开启后症状不变。
+- 已否定方案二：依据截图将 `visualViewport.height` 写入 `body`、`#bg1`、`#sheld`，并在失焦后延迟重试。用户真机仍确认症状不变。
+- 已执行：两个无效提交均已 revert，聊天重载保护原功能保留；不再保留开关或视口覆盖逻辑。
+- 后续取证要求：在同一设备上记录 `window.innerHeight`、`visualViewport.height`、`#sheld`/`#chat`/`#form_sheld` 的 `getBoundingClientRect()`、每次 resize 的时间线和 Performance 长任务，分别覆盖键盘打开、收起、黑块出现与恢复。未取得这些运行时证据前不得新增第三个修复补丁。
+
+## 2026-08-09：聊天重载失败后覆盖历史记录
+
+- 现象：切换正则或含正则预设后，聊天偶发只剩开场白。
+- 触发链：正则预设应用 → `reloadCurrentChat()` → `clearChat({ clearData: true })` → 聊天读取失败 → 新聊天初始化 → 保存开场白。
+- 风险点：清空发生在读取成功之前；失败分支仍允许整份聊天写回。
+- 回归要求：读取失败不得减少当前聊天，重载期间不得把多条消息保存成更短聊天，未知酒馆版本不得自动接管。
+
+## 2026-08-20：Android Chromium 的嵌套 `:has()` 长期失效计算
+
+- 根因证据：SillyTavern 1.18.0 顶部 drawer 的三条规则同时嵌套 `body:has(...)` 与 `#top-settings-holder:has(.drawer-content.openDrawer:not(.fillLeft):not(.fillRight))`；Android Chromium 在 drawer 打开后持续触发 `:has()` invalidation。
+- 修复边界：仅在移动端从 CSSOM 删除原始 `CSSStyleRule`，不覆盖层级，不改 viewport、键盘高度、`resize` 或 SillyTavern 核心文件。
+- 防复发：遍历嵌套规则容器时，当前不匹配的 `@media` 不深入删除，避免未来官方把规则转为 desktop-only 后仍被扩展误删。
+

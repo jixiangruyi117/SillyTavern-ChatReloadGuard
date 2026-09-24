@@ -1,0 +1,32 @@
+.chat-reload-guard__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.chat-reload-guard__summary strong {
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+}
+
+.chat-reload-guard__summary strong[data-status="active"] {
+    color: #8fd694;
+}
+
+.chat-reload-guard__summary strong[data-status="protected"],
+.chat-reload-guard__summary strong[data-status="unsupported"],
+.chat-reload-guard__summary strong[data-status="error"] {
+    color: #ffb4a2;
+}
+
+.chat-reload-guard__detail,
+.chat-reload-guard__note {
+    overflow-wrap: anywhere;
+}
+
+.chat-reload-guard__note {
+    opacity: 0.8;
+}
